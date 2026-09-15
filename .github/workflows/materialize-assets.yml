@@ -1,0 +1,51 @@
+name: materialize-assets
+on:
+  push:
+    paths:
+      - ".github/assets/READY"
+permissions:
+  contents: write
+jobs:
+  materialize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Assemble lockfile and binary assets
+        run: |
+          python3 << 'PY'
+          from pathlib import Path
+          import base64, hashlib, sys
+          root = Path(".github/assets")
+          man_path = root / "MANIFEST"
+          if not man_path.exists():
+              print("already materialized")
+              sys.exit(0)
+          for line in man_path.read_text().splitlines():
+              if not line.strip():
+                  continue
+              stem, enc, dest, size, sha = line.split("\t")
+              parts = sorted(root.glob(f"{stem}.part*"))
+              data = b"".join(p.read_bytes() for p in parts)
+              if enc == "base64":
+                  data = base64.b64decode(data)
+              if len(data) != int(size):
+                  sys.exit(f"size mismatch {dest}: {len(data)} != {size}")
+              if hashlib.sha256(data).hexdigest() != sha:
+                  sys.exit(f"sha mismatch {dest}")
+              out = Path(dest)
+              out.parent.mkdir(parents=True, exist_ok=True)
+              out.write_bytes(data)
+              print("ok", dest, len(data))
+          PY
+      - name: Commit materialized files and remove staging parts
+        run: |
+          if [ ! -f .github/assets/MANIFEST ]; then
+            echo already materialized
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          rm -rf .github/assets
+          git add -A
+          git commit -m "Materialize lockfile, PWA icon, OG image, and install screenshots"
+          git push
