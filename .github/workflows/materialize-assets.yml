@@ -11,41 +11,30 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Assemble lockfile and binary assets
+      - name: Fetch, verify, extract, and commit assets
         run: |
-          python3 << 'PY'
-          from pathlib import Path
-          import base64, gzip, hashlib, sys
-          root = Path(".github/assets")
-          man_path = root / "MANIFEST"
-          if not man_path.exists():
-              print("already materialized")
-              sys.exit(0)
-          for line in man_path.read_text().splitlines():
-              if not line.strip():
-                  continue
-              stem, enc, dest, size, sha = line.split("\t")
-              parts = sorted(root.glob(f"{stem}.part*"))
-              data = b"".join(p.read_bytes() for p in parts)
-              if enc == "base64":
-                  data = base64.b64decode(data)
-              elif enc == "gzip":
-                  data = gzip.decompress(base64.b64decode(data))
-              if len(data) != int(size):
-                  sys.exit(f"size mismatch {dest}: {len(data)} != {size}")
-              if hashlib.sha256(data).hexdigest() != sha:
-                  sys.exit(f"sha mismatch {dest}")
-              out = Path(dest)
-              out.parent.mkdir(parents=True, exist_ok=True)
-              out.write_bytes(data)
-              print("ok", dest, len(data))
-          PY
-      - name: Commit materialized files and remove staging parts
-        run: |
-          if [ ! -f .github/assets/MANIFEST ]; then
+          if [ ! -f .github/assets/READY ]; then
             echo already materialized
             exit 0
           fi
+          curl -fsSL -o /tmp/a.zip https://litter.catbox.moe/b16bji.zip
+          echo "cb48b94938df3d446a4f63188100fea5792cf1f7c7b2752dfacf3ab02af621e1  /tmp/a.zip" | sha256sum -c
+          python3 -c "import zipfile; zipfile.ZipFile('/tmp/a.zip').extractall('.')"
+          python3 << 'PY'
+          import hashlib, pathlib, sys
+          files = {
+            "package-lock.json": "fc81314ce9ca4b6be0300e35a223455005daf314253a131134bf089a5b2ba4af",
+            "public/og.jpg": "31fde503287d60e22df393338f3c3d0c631e51cd5d8bb22fa2fd9cec96db51af",
+            "public/__grok/icon-180.png": "3cf5d17d294b51c6cca6c86070309b88554b7ad702b0412e8e2709a01990bc8a",
+            "public/__grok/install/assets/homescreen/ob-phone.png": "80e0a5ede614d9b920c67d7cb79c80a79134687b1fc9f560384e896a88e302db",
+            "public/__grok/install/assets/homescreen/ob-ipad.png": "4c9b09a4660c662b394597d551a04124293b0e37a7a7c72271dd2948c4499a14",
+          }
+          for name, sha in files.items():
+              got = hashlib.sha256(pathlib.Path(name).read_bytes()).hexdigest()
+              if got != sha:
+                  sys.exit(f"sha mismatch {name}: {got}")
+              print("ok", name)
+          PY
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           rm -rf .github/assets
