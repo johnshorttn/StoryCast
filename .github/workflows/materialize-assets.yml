@@ -1,5 +1,6 @@
 name: materialize-assets
 on:
+  workflow_dispatch:
   push:
     paths:
       - ".github/assets/READY"
