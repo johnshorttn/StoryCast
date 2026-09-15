@@ -15,7 +15,7 @@ jobs:
         run: |
           python3 << 'PY'
           from pathlib import Path
-          import base64, hashlib, sys
+          import base64, gzip, hashlib, sys
           root = Path(".github/assets")
           man_path = root / "MANIFEST"
           if not man_path.exists():
@@ -29,6 +29,8 @@ jobs:
               data = b"".join(p.read_bytes() for p in parts)
               if enc == "base64":
                   data = base64.b64decode(data)
+              elif enc == "gzip":
+                  data = gzip.decompress(base64.b64decode(data))
               if len(data) != int(size):
                   sys.exit(f"size mismatch {dest}: {len(data)} != {size}")
               if hashlib.sha256(data).hexdigest() != sha:
