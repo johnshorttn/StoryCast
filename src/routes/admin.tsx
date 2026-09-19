@@ -10,6 +10,7 @@ import { useStoryStore } from "@/lib/story-store";
 import { cn } from "@/lib/utils";
 import { SignInGate } from "@/lib/auth/gates";
 import { getStoryRewriteCapability, rewriteStoryAsV2 } from "@/lib/story-rewrite";
+import { readStoryUpload } from "@/lib/story-upload";
 
 export const Route = createFileRoute("/admin")({ component: AdminRoute });
 
@@ -93,20 +94,14 @@ function Admin() {
 
   async function onJsonFiles(files: FileList | null) {
     if (!files?.length) return;
-    const selectedFiles = [...files];
-    const names = selectedFiles.map((f) => f.name).join(", ");
-    const texts: string[] = [];
-    for (const file of selectedFiles) {
-      if (!/\.(json|txt|md|markdown)$/i.test(file.name)) {
-        setStatus(`${file.name} must be JSON, text, or Markdown`);
-        return;
-      }
-      texts.push(await file.text());
+    const upload = await readStoryUpload(files);
+    if (!upload.ok) {
+      setStatus(upload.error);
+      return;
     }
-    const blob = texts.join("\n");
-    setBulk(blob);
-    setStatus(`Loaded ${names}`);
-    if (selectedFiles.every((file) => file.name.toLowerCase().endsWith(".json"))) await applyImport(blob);
+    setBulk(upload.content);
+    setStatus(`Loaded ${upload.names.join(", ")}`);
+    if (upload.allJson) await applyImport(upload.content);
     if (fileRef.current) fileRef.current.value = "";
   }
 
