@@ -26,7 +26,8 @@ async function authenticatedUser() {
 async function accountTier(userId: string): Promise<AccountTier> {
   const sql = await database();
   await sql`insert into user_tiers (user_id) values (${userId}) on conflict (user_id) do nothing`;
-  const rows = await sql<TierRow>`select tier from user_tiers where user_id = ${userId} and status = 'active'`;
+  const rows = await sql<TierRow>`select tier from user_tiers where user_id = ${userId} and status = 'active'
+    and (current_period_end is null or current_period_end > now())`;
   return normalizeTier(rows[0]?.tier);
 }
 

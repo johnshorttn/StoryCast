@@ -65,6 +65,14 @@ Owners can create random, expiring share links for private or unlisted stories. 
 original link cannot be recovered from the database. Tier limits live in `src/lib/account-tiers.ts`; billing can update
 the `user_tiers` record later without changing ownership or sharing behavior.
 
+Paid-plan gifting is provider-neutral. A verified billing webhook calls `issuePaidPlanGift` after payment; StoryCast
+stores only a hash of the one-time code. Gifts can target an email, expire after one year, and atomically extend Creator
+or Studio access when redeemed. Connecting checkout still requires choosing and configuring a payment provider.
+
+Anime-inspired stories are first-class StoryCast content. The editor supports book or anime presentation, demographic
+and visual-style metadata, anime-aware cover presets, and an anime rewrite mode that creates original episodic structure
+without copying existing franchises. The same cast, voice matching, privacy, sharing, and audio pipeline work in both modes.
+
 ## Local story rewrite model
 
 StoryCast can analyze prose, Markdown, legacy scripts, or off-schema JSON and rewrite it into a validated unpublished

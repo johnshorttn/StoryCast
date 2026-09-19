@@ -36,6 +36,8 @@ export type StoryV3 = {
     authors: { id: string; name: string; url?: string }[];
     genre: string;
     category: string;
+    presentation?: "book" | "anime";
+    anime?: Story["config"]["anime"];
   };
   edition: {
     id: string;
@@ -148,6 +150,8 @@ export function storyV2ToV3(story: Story): StoryV3 {
       authors: [],
       genre: story.config.genre,
       category: story.config.category,
+      presentation: story.config.presentation ?? "book",
+      anime: story.config.anime,
     },
     edition: {
       id: `${workId}-edition-default`,
@@ -215,6 +219,8 @@ export function storyV3ToV2(story: StoryV3): Story {
       continuation: chapter?.continuation || false,
       genre: story.work.genre,
       category: story.work.category,
+      presentation: story.work.presentation ?? "book",
+      anime: story.work.anime,
       age: story.rating === "explicit" ? "18+" : "all",
       cover: story.edition.cover?.asset,
       characterCount: cast.length,

@@ -39,7 +39,7 @@ function finalizeV2(story: Story): Story {
 }
 
 export async function rewriteStoryContent(
-  input: { content: string; instruction?: string },
+  input: { content: string; instruction?: string; presentation?: "book" | "anime" },
   options: StoryRewriteOptions,
 ) {
   const baseUrl = options.baseUrl.trim().replace(/\/+$/, "");
@@ -65,7 +65,7 @@ export async function rewriteStoryContent(
         { role: "system", content: SYSTEM },
         {
           role: "user",
-          content: `${input.instruction?.trim() ? `Editor request: ${input.instruction.trim()}\n\n` : ""}SOURCE:\n${content}`,
+          content: `${input.presentation === "anime" ? `Presentation request: Adapt as original anime-inspired episodic fiction. Preserve the source plot and mature rating. Use cinematic scene beats, expressive but natural dialogue, and clear character identities. Set config.presentation to "anime" and include config.anime with demographic, visualStyle, and episodeStructure. Do not copy protected franchises or characters.\n\n` : ""}${input.instruction?.trim() ? `Editor request: ${input.instruction.trim()}\n\n` : ""}SOURCE:\n${content}`,
         },
       ],
     }),
@@ -92,7 +92,7 @@ export const getStoryRewriteCapability = createServerFn({ method: "GET" }).handl
 }));
 
 export const rewriteStoryAsV2 = createServerFn({ method: "POST" })
-  .validator((input: { content: string; instruction?: string }) => input)
+  .validator((input: { content: string; instruction?: string; presentation?: "book" | "anime" }) => input)
   .handler(async ({ data }) => {
     const { requireUserId } = await import("./auth/verify.server");
     await requireUserId();

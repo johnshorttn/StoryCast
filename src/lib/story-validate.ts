@@ -185,6 +185,16 @@ export function normalizeStory(raw: unknown): Story | null {
       category,
       age,
       cover: typeof configIn.cover === "string" ? configIn.cover : undefined,
+      presentation: configIn.presentation === "anime" ? "anime" : "book",
+      anime: isRecord(configIn.anime) ? {
+        demographic: ["kodomo", "shonen", "shojo", "seinen", "josei", "general"].includes(String(configIn.anime.demographic))
+          ? configIn.anime.demographic as NonNullable<Story["config"]["anime"]>["demographic"]
+          : "general",
+        visualStyle: ["cel", "watercolor", "modern", "retro", "chibi"].includes(String(configIn.anime.visualStyle))
+          ? configIn.anime.visualStyle as NonNullable<Story["config"]["anime"]>["visualStyle"]
+          : "modern",
+        episodeStructure: configIn.anime.episodeStructure !== false,
+      } : undefined,
       characterCount: configChars.length,
       characters: configChars,
     },

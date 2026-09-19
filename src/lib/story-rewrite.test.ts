@@ -82,4 +82,27 @@ describe("story upload rewrite", () => {
     const upload = await readStoryUpload([{ name: "chapter.pdf", text: async () => "ignored" }]);
     assert.deepEqual(upload, { ok: false, error: "chapter.pdf must be JSON, text, or Markdown" });
   });
+
+  it("adds original anime adaptation guidance when requested", async () => {
+    let requestBody = "";
+    const animeStory = {
+      ...modelStory,
+      category: "anime",
+      config: { ...modelStory.config, category: "anime", presentation: "anime", anime: { demographic: "seinen", visualStyle: "modern", episodeStructure: true } },
+    };
+    const result = await rewriteStoryContent(
+      { content: "A courier discovers a sleeping sky-city.", presentation: "anime" },
+      {
+        baseUrl: "http://story-model.test/v1",
+        fetcher: async (_url, init) => {
+          requestBody = String(init?.body || "");
+          return Response.json({ choices: [{ message: { content: JSON.stringify(animeStory) } }] });
+        },
+      },
+    );
+    assert.equal(result.ok, true);
+    assert.match(requestBody, /anime-inspired episodic fiction/);
+    assert.match(requestBody, /Do not copy protected franchises/);
+    if (result.ok) assert.equal(result.story.config.presentation, "anime");
+  });
 });

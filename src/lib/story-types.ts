@@ -25,6 +25,12 @@ export type StoryConfig = {
   age: "all" | "18+";
   characterCount: number;
   cover?: string;
+  presentation?: "book" | "anime";
+  anime?: {
+    demographic?: "kodomo" | "shonen" | "shojo" | "seinen" | "josei" | "general";
+    visualStyle?: "cel" | "watercolor" | "modern" | "retro" | "chibi";
+    episodeStructure?: boolean;
+  };
   characters: { id: string; name: string; gender: Gender; pronounceAs?: string }[];
 };
 

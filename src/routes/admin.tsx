@@ -12,6 +12,7 @@ import { SignInGate } from "@/lib/auth/gates";
 import { getStoryRewriteCapability, rewriteStoryAsV2 } from "@/lib/story-rewrite";
 import { readStoryUpload } from "@/lib/story-upload";
 import { createStoryShare, getAccountTier, listStoryShares, revokeStoryShare } from "@/lib/story-api";
+import { redeemPlanGift } from "@/lib/plan-gifts";
 
 export const Route = createFileRoute("/admin")({ component: AdminRoute });
 
@@ -49,9 +50,11 @@ function Admin() {
   const [rewriteInstruction, setRewriteInstruction] = useState("");
   const [rewriting, setRewriting] = useState(false);
   const [rewriteModel, setRewriteModel] = useState("");
+  const [rewritePresentation, setRewritePresentation] = useState<"book" | "anime">("book");
   const fileRef = useRef<HTMLInputElement>(null);
   const [tier, setTier] = useState("free");
   const [shares, setShares] = useState<Array<{ id: string; label: string | null; expires_at: string | null }>>([]);
+  const [giftCode, setGiftCode] = useState("");
 
   useEffect(() => {
     void hydrate(true);
@@ -128,6 +131,30 @@ function Admin() {
         <p className="mt-1 max-w-2xl text-muted">
           Upload, rewrite, and manage private, unlisted, or public stories. Your current account tier is {tier}.
         </p>
+        <form
+          className="mt-3 flex max-w-lg flex-wrap gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void redeemPlanGift({ data: { code: giftCode } })
+              .then((gift) => {
+                setTier(gift.tier);
+                setGiftCode("");
+                setStatus(`Gift redeemed: ${gift.durationDays} days of ${gift.tier}`);
+              })
+              .catch((error) => setStatus(error instanceof Error ? error.message : "Could not redeem gift"));
+          }}
+        >
+          <input
+            aria-label="Gift code"
+            className="min-h-11 min-w-0 flex-1 rounded-md border border-border bg-bg px-3 text-fg"
+            value={giftCode}
+            onChange={(event) => setGiftCode(event.target.value)}
+            placeholder="Paid-plan gift code"
+          />
+          <button type="submit" disabled={!giftCode.trim()} className="min-h-11 rounded-md bg-raised px-4 text-sm text-fg disabled:opacity-50">
+            Redeem gift
+          </button>
+        </form>
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[240px_1fr_280px]">
@@ -363,6 +390,13 @@ function Admin() {
                     placeholder="Preserve every scene; make dialogue more natural."
                   />
                 </label>
+                <label className="mt-2 block text-sm text-muted">
+                  Rewrite presentation
+                  <select className="mt-1 min-h-11 w-full rounded-md border border-border bg-bg px-3 text-fg" value={rewritePresentation} onChange={(event) => setRewritePresentation(event.target.value === "anime" ? "anime" : "book")}>
+                    <option value="book">Regular book</option>
+                    <option value="anime">Anime-inspired episode</option>
+                  </select>
+                </label>
                 <button
                   type="button"
                   disabled={rewriting || !bulk.trim() || rewriteModel === "not configured"}
@@ -372,7 +406,7 @@ function Admin() {
                     setStatus("Analyzing and rewriting story…");
                     try {
                       const result = await rewriteStoryAsV2({
-                        data: { content: bulk, instruction: rewriteInstruction },
+                        data: { content: bulk, instruction: rewriteInstruction, presentation: rewritePresentation },
                       });
                       if (!result.ok) {
                         setStatus(result.error);
