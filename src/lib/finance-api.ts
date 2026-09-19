@@ -2,14 +2,8 @@ import { createServerFn } from "@tanstack/react-start";
 import { reportReconciles, summarizeFinance, type BillingLedgerEntry } from "./finance-report";
 
 async function requireFinanceAdmin() {
-  const { requireUser } = await import("./auth/verify.server");
-  const user = await requireUser();
-  const allowed = (process.env.STORYCAST_FINANCE_ADMINS || "")
-    .split(",").map((email) => email.trim().toLowerCase()).filter(Boolean);
-  if (!user.email || !allowed.includes(user.email.toLowerCase())) {
-    throw new Error("Finance administrator access required");
-  }
-  return user;
+  const { requirePlatformCapability } = await import("./platform-roles.server");
+  return requirePlatformCapability("view_finance");
 }
 
 export const getFinancialReport = createServerFn({ method: "GET" })

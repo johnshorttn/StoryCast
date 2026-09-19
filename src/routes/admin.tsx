@@ -13,6 +13,9 @@ import { getStoryRewriteCapability, rewriteStoryAsV2 } from "@/lib/story-rewrite
 import { readStoryUpload } from "@/lib/story-upload";
 import { createStoryShare, getAccountTier, listStoryShares, revokeStoryShare } from "@/lib/story-api";
 import { redeemPlanGift } from "@/lib/plan-gifts";
+import { getCurrentPlatformRole } from "@/lib/platform-roles-api";
+import { listTemporaryAdminRequests, requestTemporaryAdmin, reviewTemporaryAdminRequest, revokeTemporaryAdmin } from "@/lib/privilege-elevation-api";
+import { TEMPORARILY_GRANTABLE_CAPABILITIES, type PlatformCapability, type PlatformRole } from "@/lib/platform-roles";
 
 export const Route = createFileRoute("/admin")({ component: AdminRoute });
 
@@ -55,6 +58,13 @@ function Admin() {
   const [tier, setTier] = useState("free");
   const [shares, setShares] = useState<Array<{ id: string; label: string | null; expires_at: string | null }>>([]);
   const [giftCode, setGiftCode] = useState("");
+  const [platformRole, setPlatformRole] = useState<PlatformRole>("user");
+  const [elevationCapability, setElevationCapability] = useState<PlatformCapability>("view_finance");
+  const [elevationReason, setElevationReason] = useState("");
+  const [elevationRequests, setElevationRequests] = useState<Array<{
+    id: string; name: string; email: string; requested_capabilities: PlatformCapability[];
+    reason: string; status: string; approved_until: string | null;
+  }>>([]);
 
   useEffect(() => {
     void hydrate(true);
@@ -62,6 +72,12 @@ function Admin() {
       setRewriteModel(capability.configured ? capability.model : "not configured"),
     );
     void getAccountTier().then((account) => setTier(account.tier));
+    void getCurrentPlatformRole().then((access) => {
+      setPlatformRole(access.role);
+      if (access.role === "owner") {
+        void listTemporaryAdminRequests().then(setElevationRequests);
+      }
+    });
   }, [hydrate]);
 
   const cats = [...new Set(all.map((s) => s.category || s.config.category || "uncategorized"))];
@@ -155,6 +171,52 @@ function Admin() {
             Redeem gift
           </button>
         </form>
+        <p className="mt-2 text-xs uppercase tracking-wide text-muted">Platform role: {platformRole}</p>
+        {platformRole === "developer" || platformRole === "moderator" ? (
+          <form
+            className="mt-3 grid max-w-2xl gap-2 rounded-md bg-raised p-3 sm:grid-cols-[180px_1fr_auto]"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void requestTemporaryAdmin({ data: { capabilities: [elevationCapability], reason: elevationReason } })
+                .then(() => { setElevationReason(""); setStatus("Temporary administrator access requested"); })
+                .catch((error) => setStatus(error instanceof Error ? error.message : "Request failed"));
+            }}
+          >
+            <select className="min-h-11 rounded-md border border-border bg-bg px-2 text-fg" value={elevationCapability} onChange={(event) => setElevationCapability(event.target.value as PlatformCapability)}>
+              {TEMPORARILY_GRANTABLE_CAPABILITIES.map((capability) => <option key={capability} value={capability}>{capability.replaceAll("_", " ")}</option>)}
+            </select>
+            <input required minLength={10} maxLength={500} className="min-h-11 rounded-md border border-border bg-bg px-3 text-fg" value={elevationReason} onChange={(event) => setElevationReason(event.target.value)} placeholder="Why temporary admin access is needed" />
+            <button type="submit" className="min-h-11 rounded-md bg-primary px-4 font-semibold text-primary-fg">Request sudo</button>
+          </form>
+        ) : null}
+        {platformRole === "owner" && elevationRequests.some((request) => request.status === "pending" || request.status === "approved") ? (
+          <div className="mt-3 max-w-3xl rounded-md bg-raised p-3 text-sm">
+            <p className="mb-2 font-semibold">Temporary administrator requests</p>
+            {elevationRequests.filter((request) => request.status === "pending" || request.status === "approved").map((request) => (
+              <div key={request.id} className="border-t border-border py-2 first:border-0">
+                <p><span className="font-semibold">{request.name}</span> · {request.requested_capabilities.join(", ")}</p>
+                <p className="text-muted">{request.reason}</p>
+                <div className="mt-2 flex gap-2">
+                  {request.status === "pending" ? <>
+                    <button type="button" className="rounded-md bg-primary px-3 py-2 text-primary-fg" onClick={async () => {
+                      await reviewTemporaryAdminRequest({ data: { requestId: request.id, decision: "approve", minutes: 60 } });
+                      setElevationRequests(await listTemporaryAdminRequests());
+                    }}>Approve 1 hour</button>
+                    <button type="button" className="rounded-md bg-bg px-3 py-2" onClick={async () => {
+                      await reviewTemporaryAdminRequest({ data: { requestId: request.id, decision: "deny" } });
+                      setElevationRequests(await listTemporaryAdminRequests());
+                    }}>Deny</button>
+                  </> : (
+                    <button type="button" className="rounded-md bg-danger px-3 py-2" onClick={async () => {
+                      await revokeTemporaryAdmin({ data: { requestId: request.id } });
+                      setElevationRequests(await listTemporaryAdminRequests());
+                    }}>Revoke sudo</button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[240px_1fr_280px]">

@@ -76,7 +76,13 @@ without copying existing franchises. The same cast, voice matching, privacy, sha
 Hybrid billing writes Stripe and Paddle webhook results into one idempotent ledger using minor currency units. Finance
 reports return three views—Combined, Stripe, and Paddle—for each currency, with gross, refunds, disputes, processor
 fees, tax, net, and transaction count. Combined values are derived from the two provider views and include an automatic
-reconciliation result. Set `STORYCAST_FINANCE_ADMINS` to restrict these reports to specific account emails.
+reconciliation result. Financial reporting is an Owner capability.
+
+Platform authorization has four roles: Owner, Developer, Moderator, and User. Owners are permanent root administrators
+and are bootstrapped through `STORYCAST_OWNER_EMAILS`. Developers and Moderators can request capability-scoped temporary
+administrator access with a reason. An Owner must approve it for 15 minutes to 4 hours and may revoke it immediately.
+Temporary access can cover moderation, system health, integrations, finance, or billing, but can never assign permanent
+roles or create another Owner. Requests, approvals, expiration, and revocation are retained for audit.
 
 ## Local story rewrite model
 
