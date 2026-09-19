@@ -47,6 +47,11 @@ optional adapter URLs in `.env.example`. The player ranks equivalent voices by g
 tone (warm, clear, soft, deep, bright, or dramatic). Device voices play locally and cannot be included in WAV exports;
 select xAI, Kokoro, or Sherpa voices when downloading an episode.
 
+For reusable rendered beats, configure both `STORY_AUDIO_ROOT` and `STORY_AUDIO_PUBLIC_URL`, then serve that directory
+from nginx or a media host. StoryCast hashes the story revision, beat text, character, voice, model, pronunciation, and
+render settings; unchanged beats reuse the same asset while relevant edits create a new one. Render metadata is stored
+in Postgres when the story exists in the catalog. Without these settings, playback retains the in-memory Base64 fallback.
+
 ## Data
 
 Story edits are stored in Postgres when `DATABASE_URL` is configured. Every save creates an immutable revision before

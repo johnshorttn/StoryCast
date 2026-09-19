@@ -339,7 +339,7 @@ export function Player({
   const [done, setDone] = useState(false);
   const stopRef = useRef({ stopped: false, paused: false });
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const clipsRef = useRef<Map<string, { mime: string; b64: string }>>(new Map());
+  const clipsRef = useRef<Map<string, { mime: string; b64: string; url?: string }>>(new Map());
   const speedRef = useRef(speed);
   const autoRef = useRef(false);
 
@@ -451,19 +451,37 @@ export function Player({
     return `${vid}|${text}`;
   }
 
-  async function fetchClip(text: string, vid: string) {
+  async function fetchClip(text: string, vid: string, line?: { id: string; speaker: string }) {
     if (vid.startsWith("device:")) throw new Error("Device voices cannot be exported as audio files");
     const key = clipKey(text, vid);
     const hit = clipsRef.current.get(key);
     if (hit) return hit;
-    const data = await synthTts({ data: { text, voiceId: vid } });
+    const data = await synthTts({
+      data: {
+        text,
+        voiceId: vid,
+        ...(line
+          ? {
+              render: {
+                storyId: story.id,
+                storyRevision: story.storyRev,
+                chapterId: `chapter-${story.config.chapter || 1}`,
+                beatId: line.id,
+                characterId: line.speaker,
+                settings: { mode },
+                pronunciationVersion: JSON.stringify(spoken),
+              },
+            }
+          : {}),
+      },
+    });
     if (!data.ok) throw new Error(data.error);
-    const clip = { mime: data.mime, b64: data.b64 };
+    const clip = { mime: data.mime, b64: data.b64, ...(data.url ? { url: data.url } : {}) };
     clipsRef.current.set(key, clip);
     return clip;
   }
 
-  async function speakOne(text: string, vid: string, startFrac = 0) {
+  async function speakOne(text: string, vid: string, startFrac = 0, line?: { id: string; speaker: string }) {
     setPhase("rendering");
     if (startFrac <= 0) setLineFrac(0);
     if (vid.startsWith("device:")) {
@@ -476,10 +494,10 @@ export function Player({
       setLineFrac(1);
       return "ended" as const;
     }
-    const clip = await fetchClip(text, vid);
+    const clip = await fetchClip(text, vid, line);
     if (stopRef.current.stopped) return "stopped" as const;
     if (stopRef.current.paused) return "paused" as const;
-    const url = `data:${clip.mime};base64,${clip.b64}`;
+    const url = clip.url || `data:${clip.mime};base64,${clip.b64}`;
     const el = audioRef.current;
     if (!el) throw new Error("No player");
     setPhase("playing");
@@ -512,7 +530,7 @@ export function Player({
         setActive(i);
         setProgress(story.id, i, i === from ? startFrac : 0);
         setStatus(`Rendering ${lines[i].speaker}\u2026`);
-        const result = await speakOne(lines[i].text, lines[i].voiceId, i === from ? startFrac : 0);
+        const result = await speakOne(lines[i].text, lines[i].voiceId, i === from ? startFrac : 0, lines[i]);
         if (result !== "ended") return;
         setProgress(story.id, i, 1);
       }
@@ -571,7 +589,7 @@ export function Player({
         if (stopRef.current.stopped) return;
         setActive(i);
         setStatus(`Rendering ${i + 1} of ${lines.length}\u2026`);
-        clips.push(await fetchClip(lines[i].text, lines[i].voiceId));
+        clips.push(await fetchClip(lines[i].text, lines[i].voiceId, lines[i]));
       }
       const wav = await clipsToWav(clips);
       downloadBlob(wav, `${story.id}.wav`);

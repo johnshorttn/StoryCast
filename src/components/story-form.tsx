@@ -130,7 +130,7 @@ export function StoryForm({
       return;
     }
     const used = "voiceId" in data ? data.voiceId : vid;
-    const audio = new Audio(`data:${data.mime};base64,${data.b64}`);
+    const audio = new Audio(data.url || `data:${data.mime};base64,${data.b64}`);
     setPreviewMsg(`Playing ${beat.speaker} (${used})`);
     audio.onended = () => setPreviewMsg("");
     await audio.play().catch((err) => setPreviewMsg(String(err)));
