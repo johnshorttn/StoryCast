@@ -1,4 +1,5 @@
 import { STARTER_STORY, type Gender, type Story, type StoryBeat, type StoryCharacter } from "./story-types.ts";
+import { isStoryV3, storyV3ToV2 } from "./story-v3.ts";
 
 export type StoryIssue = { level: "error" | "warn"; message: string };
 
@@ -80,6 +81,7 @@ function voiceFromGender(gender: Gender, id: string): StoryCharacter["defaultVoi
 }
 
 export function normalizeStory(raw: unknown): Story | null {
+  if (isStoryV3(raw)) return normalizeStory(storyV3ToV2(raw));
   if (!isRecord(raw)) return null;
   const configIn = isRecord(raw.config) ? raw.config : {};
   const configCastRaw = Array.isArray(configIn.characters) ? configIn.characters : [];

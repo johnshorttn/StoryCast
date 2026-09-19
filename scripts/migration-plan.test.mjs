@@ -54,6 +54,7 @@ test("the auth schema stays isolated while app migrations remain discoverable", 
   const migrationsDir = join(projectRoot(), "migrations");
   assert.deepEqual(pendingMigrations(readdirSync(migrationsDir), []), [
     { name: "0001_story_catalog.sql", path: "0001_story_catalog.sql" },
+    { name: "0002_storycast_v3_media.sql", path: "0002_storycast_v3_media.sql" },
   ]);
   assert.ok(readdirSync(join(migrationsDir, "auth")).includes("0001_auth.sql"));
 });

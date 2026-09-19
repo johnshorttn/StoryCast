@@ -1,6 +1,7 @@
 import { createServerFn } from "@tanstack/react-start";
 import type { Story } from "./story-types";
 import { normalizeStory, validateStory } from "./story-validate";
+import { storyV2ToV3 } from "./story-v3";
 
 type StoryRow = { payload: Story | string };
 
@@ -45,7 +46,8 @@ export const saveManagedStory = createServerFn({ method: "POST" })
       select coalesce(max(revision), 0)::int as revision from story_revisions where story_id = ${story.id}
     `;
     const revision = (current[0]?.revision ?? 0) + 1;
-    const payload = JSON.stringify(story);
+    const canonical = storyV2ToV3(story);
+    const payload = JSON.stringify(canonical);
     await sql.query(
         `insert into story_revisions (story_id, revision, owner_id, payload)
          values ($1, $2, $3, $4::jsonb)`,
