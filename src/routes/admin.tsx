@@ -8,8 +8,17 @@ import { importStories, validateStory } from "@/lib/story-validate";
 import { displayTitle, type Story } from "@/lib/story-types";
 import { useStoryStore } from "@/lib/story-store";
 import { cn } from "@/lib/utils";
+import { SignInGate } from "@/lib/auth/gates";
 
-export const Route = createFileRoute("/admin")({ component: Admin });
+export const Route = createFileRoute("/admin")({ component: AdminRoute });
+
+function AdminRoute() {
+  return (
+    <SignInGate>
+      <Admin />
+    </SignInGate>
+  );
+}
 
 function Admin() {
   const hydrate = useStoryStore((s) => s.hydrate);
@@ -38,7 +47,7 @@ function Admin() {
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    hydrate();
+    void hydrate(true);
   }, [hydrate]);
 
   const cats = [...new Set(all.map((s) => s.category || s.config.category || "uncategorized"))];
@@ -52,14 +61,14 @@ function Admin() {
     setTab("fields");
   }
 
-  function applyImport(text: string) {
+  async function applyImport(text: string) {
     const result = importStories(text);
     if (result.error) {
       setStatus(result.error);
       setReport(null);
       return;
     }
-    if (result.imported.length) saveMany(result.imported);
+    if (result.imported.length) await saveMany(result.imported);
     setReport({
       imported: result.imported.map((s) => s.id),
       skipped: result.skipped,
@@ -89,7 +98,7 @@ function Admin() {
     const blob = texts.join("\n");
     setBulk(blob);
     setStatus(`Loaded ${names}`);
-    applyImport(blob);
+    await applyImport(blob);
     if (fileRef.current) fileRef.current.value = "";
   }
 
@@ -121,7 +130,7 @@ function Admin() {
             <button
               type="button"
               className="min-h-11 rounded-md bg-primary px-3 font-semibold text-primary-fg"
-              onClick={() => {
+              onClick={async () => {
                 const t = fromTemplate();
                 setCurrentId("");
                 setDraft(t);
@@ -192,7 +201,7 @@ function Admin() {
             <button
               type="button"
               className="min-h-11 rounded-md bg-primary px-4 font-semibold text-primary-fg"
-              onClick={() => {
+              onClick={async () => {
                 try {
                   const story = parseEditor();
                   const errors = validateStory(story).filter((i) => i.level === "error");
@@ -200,7 +209,7 @@ function Admin() {
                     setStatus(errors[0].message);
                     return;
                   }
-                  save(story);
+                  await save(story);
                   setCurrentId(story.id);
                   setDraft(story);
                   setJson(JSON.stringify(story, null, 2));
@@ -215,12 +224,12 @@ function Admin() {
             <button
               type="button"
               className="min-h-11 rounded-md bg-raised px-4 text-fg"
-              onClick={() => {
+              onClick={async () => {
                 if (!currentId) return;
                 try {
                   const story = parseEditor();
                   const next = story.published === false;
-                  setPublished(currentId, next);
+                  await setPublished(currentId, next);
                   const updated = { ...story, published: next };
                   setDraft(updated);
                   setJson(JSON.stringify(updated, null, 2));
@@ -235,10 +244,10 @@ function Admin() {
             <button
               type="button"
               className="min-h-11 rounded-md bg-danger px-4 text-fg"
-              onClick={() => {
+              onClick={async () => {
                 if (!currentId) return;
-                if (!confirm("Remove " + currentId + " from this browser catalog?")) return;
-                remove(currentId);
+                if (!confirm("Delete " + currentId + " from the catalog? Revision history will be retained.")) return;
+                await remove(currentId);
                 setCurrentId("");
                 setDraft(null);
                 setJson("");
@@ -311,7 +320,7 @@ function Admin() {
               <button
                 type="button"
                 className="mt-2 min-h-11 rounded-md bg-primary px-4 font-semibold text-primary-fg"
-                onClick={() => applyImport(bulk)}
+                onClick={() => void applyImport(bulk)}
               >
                 Validate and import
               </button>

@@ -1,4 +1,4 @@
-import { STARTER_STORY, type Gender, type Story, type StoryBeat, type StoryCharacter } from "./story-types";
+import { STARTER_STORY, type Gender, type Story, type StoryBeat, type StoryCharacter } from "./story-types.ts";
 
 export type StoryIssue = { level: "error" | "warn"; message: string };
 
@@ -220,8 +220,8 @@ export function validateStory(story: Story): StoryIssue[] {
   const tokenRe = /\{\{(\w+)\}\}/g;
   for (const beat of story.beats || []) {
     if (!beat.text) issues.push({ level: "error", message: `beat ${beat.id} is empty` });
-    if (beat.text.length > 2000) {
-      issues.push({ level: "warn", message: `beat ${beat.id} is ${beat.text.length} chars; TTS may split it` });
+    if (beat.text.length > 500) {
+      issues.push({ level: "warn", message: `beat ${beat.id} is ${beat.text.length} chars; split it for clearer speech` });
     }
     if (!idSet.has(beat.speaker)) {
       issues.push({ level: "error", message: `beat ${beat.id} speaker "${beat.speaker}" is not a character` });
@@ -234,6 +234,18 @@ export function validateStory(story: Story): StoryIssue[] {
   }
   if ((story.config?.age === "18+") !== (story.rating === "explicit")) {
     issues.push({ level: "warn", message: "age 18+ and rating explicit should match" });
+  }
+  if (story.title !== story.config.title) {
+    issues.push({ level: "error", message: "title and config.title must match" });
+  }
+  if (story.category !== story.config.category) {
+    issues.push({ level: "error", message: "category and config.category must match" });
+  }
+  if (story.storyRev !== story.config.version) {
+    issues.push({ level: "error", message: "storyRev and config.version must match" });
+  }
+  if (!/^[a-z]{2}(?:-[A-Z]{2})?$/.test(story.locale)) {
+    issues.push({ level: "warn", message: `locale ${story.locale} should look like en or en-US` });
   }
   return issues;
 }
