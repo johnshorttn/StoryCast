@@ -73,6 +73,11 @@ Anime-inspired stories are first-class StoryCast content. The editor supports bo
 and visual-style metadata, anime-aware cover presets, and an anime rewrite mode that creates original episodic structure
 without copying existing franchises. The same cast, voice matching, privacy, sharing, and audio pipeline work in both modes.
 
+Hybrid billing writes Stripe and Paddle webhook results into one idempotent ledger using minor currency units. Finance
+reports return three views—Combined, Stripe, and Paddle—for each currency, with gross, refunds, disputes, processor
+fees, tax, net, and transaction count. Combined values are derived from the two provider views and include an automatic
+reconciliation result. Set `STORYCAST_FINANCE_ADMINS` to restrict these reports to specific account emails.
+
 ## Local story rewrite model
 
 StoryCast can analyze prose, Markdown, legacy scripts, or off-schema JSON and rewrite it into a validated unpublished
