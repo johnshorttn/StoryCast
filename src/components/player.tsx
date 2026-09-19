@@ -34,6 +34,20 @@ type PlayerVoice = {
   tone: VoiceTone;
   available: boolean;
 };
+type VoicePreference = { accent: VoiceAccent; tone: VoiceTone };
+
+function defaultVoicePreferences(story: Story): Record<string, VoicePreference> {
+  const genders = defaultGenders(story);
+  return Object.fromEntries(
+    story.characters.map((character) => [
+      character.id,
+      {
+        accent: "american" as const,
+        tone: character.id === "narrator" ? "dramatic" as const : genders[character.id] === "male" ? "deep" as const : "warm" as const,
+      },
+    ]),
+  );
+}
 
 function playDataUrl(
   el: HTMLAudioElement,
@@ -146,6 +160,7 @@ function VoiceBlock({
   voices,
   accent,
   tone,
+  onPreference,
 }: {
   id: string;
   isNarrator: boolean;
@@ -161,6 +176,7 @@ function VoiceBlock({
   voices: PlayerVoice[];
   accent: VoiceAccent;
   tone: VoiceTone;
+  onPreference: (preference: VoicePreference) => void;
 }) {
   const sex: Gender = gender === "female" ? "female" : "male";
   const filteredVoices = voices
@@ -170,6 +186,7 @@ function VoiceBlock({
       a.label.localeCompare(b.label),
     );
   const selected = filteredVoices.some((v) => v.id === voice) ? voice : (filteredVoices[0]?.id ?? "");
+  const recommended = filteredVoices.find((candidate) => candidate.available);
 
   return (
     <div className="space-y-2">
@@ -208,6 +225,49 @@ function VoiceBlock({
           <option value="female">Female</option>
         </select>
       </label>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="text-sm text-muted">
+          Accent
+          <select
+            className="mt-1 min-h-11 w-full rounded-md border border-border bg-bg px-2 text-fg"
+            value={accent}
+            onChange={(event) => onPreference({ accent: event.target.value as VoiceAccent, tone })}
+          >
+            <option value="american">American</option>
+            <option value="british">British</option>
+            <option value="neutral">Any</option>
+          </select>
+        </label>
+        <label className="text-sm text-muted">
+          Tone
+          <select
+            className="mt-1 min-h-11 w-full rounded-md border border-border bg-bg px-2 text-fg"
+            value={tone}
+            onChange={(event) => onPreference({ accent, tone: event.target.value as VoiceTone })}
+          >
+            <option value="warm">Warm</option>
+            <option value="clear">Clear</option>
+            <option value="soft">Soft</option>
+            <option value="deep">Deep</option>
+            <option value="bright">Bright</option>
+            <option value="dramatic">Dramatic</option>
+            <option value="neutral">Any</option>
+          </select>
+        </label>
+      </div>
+      {recommended ? (
+        <button
+          type="button"
+          className="w-full rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-left text-sm text-fg"
+          onClick={() => onGenderVoice(sex, recommended.id)}
+        >
+          <span className="block text-xs uppercase tracking-wide text-primary">Recommended</span>
+          <span className="font-semibold">{recommended.label}</span>
+          <span className="text-muted"> · {recommended.provider}</span>
+        </button>
+      ) : (
+        <p className="rounded-md bg-raised p-2 text-xs text-muted">No configured voice matches this character yet.</p>
+      )}
       <label className="block text-sm text-muted">
         Voice
         <select
@@ -270,8 +330,7 @@ export function Player({
   const [deviceVoiceRecords, setDeviceVoiceRecords] = useState<SpeechSynthesisVoice[]>([]);
   const [deviceVoiceOptions, setDeviceVoiceOptions] = useState<VoiceOption[]>([]);
   const [capabilities, setCapabilities] = useState<Record<VoiceProvider, boolean>>({ xai: false, kokoro: false, sherpa: false });
-  const [preferredAccent, setPreferredAccent] = useState<VoiceAccent>("american");
-  const [preferredTone, setPreferredTone] = useState<VoiceTone>("warm");
+  const [voicePreferences, setVoicePreferences] = useState(() => defaultVoicePreferences(story));
   const [active, setActive] = useState(saved?.beat ?? -1);
   const [playing, setPlaying] = useState(false);
   const [phase, setPhase] = useState<"idle" | "rendering" | "playing">("idle");
@@ -302,6 +361,7 @@ export function Player({
     setSpeak(defaultSpeak(story));
     const g = defaultGenders(story);
     setGenders(g);
+    setVoicePreferences(defaultVoicePreferences(story));
     const o: Record<string, string> = {};
     for (const c of story.characters) {
       o[c.id] = defaultVoiceId(g[c.id] || (c.id === "narrator" ? "male" : "female"), c.id);
@@ -376,10 +436,11 @@ export function Player({
   function setGenderVoice(id: string, gender: Gender, voice: string) {
     const sex: Gender = gender === "female" ? "female" : "male";
     const allowed = availableVoices.filter((v) => v.available && (v.gender === sex || v.gender === "neutral"));
+    const preference = voicePreferences[id] || { accent: "american", tone: "neutral" };
     const fallback = [...allowed].sort(
       (a, b) =>
-        voiceMatchScore(b, { gender: sex, accent: preferredAccent, tone: preferredTone }) -
-        voiceMatchScore(a, { gender: sex, accent: preferredAccent, tone: preferredTone }),
+        voiceMatchScore(b, { gender: sex, ...preference }) -
+        voiceMatchScore(a, { gender: sex, ...preference }),
     )[0]?.id;
     const nextVoice = allowed.some((v) => v.id === voice) ? voice : (fallback || defaultVoiceId(sex, id));
     setGenders((prev) => ({ ...prev, [id]: sex }));
@@ -606,36 +667,6 @@ export function Player({
           <p className="mb-3 text-sm text-muted">
             Pick a voice profile and StoryCast ranks the closest matches across every configured provider.
           </p>
-          <div className="mb-4 grid grid-cols-2 gap-2">
-            <label className="text-sm text-muted">
-              Accent
-              <select
-                className="mt-1 min-h-11 w-full rounded-md border border-border bg-bg px-2 text-fg"
-                value={preferredAccent}
-                onChange={(event) => setPreferredAccent(event.target.value as VoiceAccent)}
-              >
-                <option value="american">American</option>
-                <option value="british">British</option>
-                <option value="neutral">Any accent</option>
-              </select>
-            </label>
-            <label className="text-sm text-muted">
-              Tone
-              <select
-                className="mt-1 min-h-11 w-full rounded-md border border-border bg-bg px-2 text-fg"
-                value={preferredTone}
-                onChange={(event) => setPreferredTone(event.target.value as VoiceTone)}
-              >
-                <option value="warm">Warm</option>
-                <option value="clear">Clear</option>
-                <option value="soft">Soft</option>
-                <option value="deep">Deep</option>
-                <option value="bright">Bright</option>
-                <option value="dramatic">Dramatic</option>
-                <option value="neutral">Any tone</option>
-              </select>
-            </label>
-          </div>
           <div className="mb-4">
             <p className="mb-2 text-sm text-muted">Speed</p>
             <div className="flex gap-2">
@@ -669,8 +700,11 @@ export function Player({
                 onGenderVoice={(g, v) => setGenderVoice(c.id, g, v)}
                 previewing={phase !== "idle" && !playing}
                 voices={availableVoices}
-                accent={preferredAccent}
-                tone={preferredTone}
+                accent={voicePreferences[c.id]?.accent || "american"}
+                tone={voicePreferences[c.id]?.tone || "neutral"}
+                onPreference={(preference) =>
+                  setVoicePreferences((current) => ({ ...current, [c.id]: preference }))
+                }
                 onPreview={() => {
                   const sample =
                     c.id === "narrator"
