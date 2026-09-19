@@ -245,13 +245,20 @@ export function StoryForm({
           />
           Continuation
         </label>
-        <label className="flex min-h-11 items-center gap-2 text-sm text-fg">
-          <input
-            type="checkbox"
-            checked={story.published !== false}
-            onChange={(e) => patch({ published: e.target.checked })}
-          />
-          Published
+        <label className="block text-sm text-muted">
+          Visibility
+          <select
+            className="mt-1 min-h-11 w-full rounded-md border border-border bg-bg px-3 text-fg"
+            value={story.visibility ?? (story.published !== false ? "public" : "private")}
+            onChange={(event) => {
+              const visibility = event.target.value as "private" | "unlisted" | "public";
+              patch({ visibility, published: visibility === "public" });
+            }}
+          >
+            <option value="private">Private — only you</option>
+            <option value="unlisted">Unlisted — share links only</option>
+            <option value="public">Public — catalog</option>
+          </select>
         </label>
         <label className="flex min-h-11 items-center gap-2 text-sm text-fg">
           <input

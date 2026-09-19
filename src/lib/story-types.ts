@@ -34,6 +34,7 @@ export type Story = {
   storyRev: number;
   rating: "general" | "explicit";
   published: boolean;
+  visibility?: "private" | "unlisted" | "public";
   category: string;
   allowNameChange: boolean;
   locale: string;

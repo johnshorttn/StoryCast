@@ -11,6 +11,7 @@ import { cn } from "@/lib/utils";
 import { SignInGate } from "@/lib/auth/gates";
 import { getStoryRewriteCapability, rewriteStoryAsV2 } from "@/lib/story-rewrite";
 import { readStoryUpload } from "@/lib/story-upload";
+import { createStoryShare, getAccountTier, listStoryShares, revokeStoryShare } from "@/lib/story-api";
 
 export const Route = createFileRoute("/admin")({ component: AdminRoute });
 
@@ -29,7 +30,6 @@ function Admin() {
   const save = useStoryStore((s) => s.save);
   const saveMany = useStoryStore((s) => s.saveMany);
   const remove = useStoryStore((s) => s.remove);
-  const setPublished = useStoryStore((s) => s.setPublished);
   const fromTemplate = useStoryStore((s) => s.fromTemplate);
   const all = useMemo(() => useStoryStore.getState().all(), [custom, ready]);
 
@@ -50,12 +50,15 @@ function Admin() {
   const [rewriting, setRewriting] = useState(false);
   const [rewriteModel, setRewriteModel] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
+  const [tier, setTier] = useState("free");
+  const [shares, setShares] = useState<Array<{ id: string; label: string | null; expires_at: string | null }>>([]);
 
   useEffect(() => {
     void hydrate(true);
     void getStoryRewriteCapability().then((capability) =>
       setRewriteModel(capability.configured ? capability.model : "not configured"),
     );
+    void getAccountTier().then((account) => setTier(account.tier));
   }, [hydrate]);
 
   const cats = [...new Set(all.map((s) => s.category || s.config.category || "uncategorized"))];
@@ -67,6 +70,7 @@ function Admin() {
     setJson(JSON.stringify(s, null, 2));
     setStatus(s.id);
     setTab("fields");
+    void listStoryShares({ data: { storyId: s.id } }).then(setShares).catch(() => setShares([]));
   }
 
   async function applyImport(text: string) {
@@ -122,8 +126,7 @@ function Admin() {
         <p className="text-sm uppercase tracking-[0.18em] text-primary">Catalog</p>
         <h1 className="font-display text-3xl tracking-tight">Administer stories</h1>
         <p className="mt-1 max-w-2xl text-muted">
-          Edit with fields or JSON. Import a batch from the Stories Grok project. Covers, beats, and line preview live
-          here. Changes stay in this browser until you publish elsewhere.
+          Upload, rewrite, and manage private, unlisted, or public stories. Your current account tier is {tier}.
         </p>
       </div>
 
@@ -174,7 +177,7 @@ function Admin() {
               >
                 <span className="block font-semibold">{displayTitle(s)}</span>
                 <span className="text-xs text-muted">
-                  {s.category || s.config.category} \u00b7 {s.published === false ? "off" : "on"}
+                  {s.category || s.config.category} \u00b7 {s.visibility ?? (s.published === false ? "private" : "public")}
                 </span>
               </button>
             ))}
@@ -230,19 +233,17 @@ function Admin() {
               onClick={async () => {
                 if (!currentId) return;
                 try {
-                  const story = parseEditor();
-                  const next = story.published === false;
-                  await setPublished(currentId, next);
-                  const updated = { ...story, published: next };
-                  setDraft(updated);
-                  setJson(JSON.stringify(updated, null, 2));
-                  setStatus(next ? "Enabled" : "Disabled");
+                  const share = await createStoryShare({ data: { storyId: currentId, expiresInDays: 30 } });
+                  const url = `${window.location.origin}/share/${share.token}`;
+                  await navigator.clipboard.writeText(url);
+                  setStatus("Private share link copied — expires in 30 days");
+                  setShares(await listStoryShares({ data: { storyId: currentId } }));
                 } catch (e) {
-                  setStatus(e instanceof Error ? e.message : "Could not toggle");
+                  setStatus(e instanceof Error ? e.message : "Could not create share link");
                 }
               }}
             >
-              Enable / disable
+              Copy private share link
             </button>
             <button
               type="button"
@@ -260,6 +261,29 @@ function Admin() {
               Delete
             </button>
           </div>
+          {shares.length ? (
+            <div className="mb-3 rounded-md bg-raised p-3 text-sm">
+              <p className="mb-2 font-semibold">Active private links</p>
+              {shares.map((share) => (
+                <div key={share.id} className="flex min-h-11 items-center justify-between gap-3 border-t border-border first:border-0">
+                  <span className="text-muted">
+                    {share.label || "Private link"}{share.expires_at ? ` · expires ${new Date(share.expires_at).toLocaleDateString()}` : ""}
+                  </span>
+                  <button
+                    type="button"
+                    className="text-danger hover:underline"
+                    onClick={async () => {
+                      await revokeStoryShare({ data: { shareId: share.id } });
+                      setShares((current) => current.filter((item) => item.id !== share.id));
+                      setStatus("Share link revoked");
+                    }}
+                  >
+                    Revoke
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
           {status ? <p className="mb-2 text-sm text-muted">{status}</p> : null}
 
           {tab === "fields" ? (

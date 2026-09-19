@@ -110,6 +110,8 @@ export const useStoryStore = create<State>((set, get) => ({
     t.title = "Untitled";
     t.config.title = "Untitled";
     t.config.series = "Untitled";
+    t.visibility = "private";
+    t.published = false;
     return t;
   },
   verifyAge: (dob) => {

@@ -57,6 +57,14 @@ in Postgres when the story exists in the catalog. Without these settings, playba
 Story edits are stored in Postgres when `DATABASE_URL` is configured. Every save creates an immutable revision before
 updating the live catalog record. Without `DATABASE_URL`, local development uses temporary in-memory PGLite storage.
 
+## Accounts, tiers, and sharing
+
+StoryCast supports email/password registration alongside configured OAuth providers. New users start on the Free tier.
+Managed stories are owner-scoped and may be private, unlisted, or public; only public stories appear in the catalog.
+Owners can create random, expiring share links for private or unlisted stories. Only token hashes are stored, so the
+original link cannot be recovered from the database. Tier limits live in `src/lib/account-tiers.ts`; billing can update
+the `user_tiers` record later without changing ownership or sharing behavior.
+
 ## Local story rewrite model
 
 StoryCast can analyze prose, Markdown, legacy scripts, or off-schema JSON and rewrite it into a validated unpublished

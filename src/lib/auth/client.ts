@@ -18,6 +18,25 @@ export const authEnabled = import.meta.env.VITE_AUTH_ENABLED !== "false";
 
 export { GROK_PROVIDERS };
 
+export async function registerWithEmail(input: { name: string; email: string; password: string }) {
+  const { error } = await authClient.signUp.email({
+    name: input.name.trim(),
+    email: input.email.trim().toLowerCase(),
+    password: input.password,
+    callbackURL: "/admin",
+  });
+  if (error) throw new Error(error.message ?? "Registration failed");
+}
+
+export async function signInWithEmail(input: { email: string; password: string }) {
+  const { error } = await authClient.signIn.email({
+    email: input.email.trim().toLowerCase(),
+    password: input.password,
+    callbackURL: "/admin",
+  });
+  if (error) throw new Error(error.message ?? "Sign-in failed");
+}
+
 const BEARER_KEY = "grok-auth.bearer-token";
 
 export function getBearerToken(): string | null {
@@ -62,6 +81,7 @@ export async function signIn(
     hasBearer: Boolean(getBearerToken()),
     requestSignOut: () => authClient.signOut(),
     clearToken: () => setBearerToken(null),
+    timeoutMs: undefined,
   });
 
   if (inLivePreview()) {
@@ -143,5 +163,6 @@ export async function signOut(redirectTo = "/"): Promise<void> {
     redirect: () => {
       window.location.href = redirectTo;
     },
+    timeoutMs: undefined,
   });
 }

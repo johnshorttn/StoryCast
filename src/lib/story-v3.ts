@@ -23,6 +23,7 @@ export type StoryV3 = {
   id: string;
   revision: number;
   published: boolean;
+  visibility?: "private" | "unlisted" | "public";
   locale: string;
   rating: "general" | "explicit";
   category: string;
@@ -135,6 +136,7 @@ export function storyV2ToV3(story: Story): StoryV3 {
     id: story.id,
     revision: Math.max(3, story.storyRev || 1),
     published: story.published !== false,
+    visibility: story.visibility ?? (story.published !== false ? "public" : "private"),
     locale: story.locale,
     rating: story.rating,
     category: story.category,
@@ -200,6 +202,7 @@ export function storyV3ToV2(story: StoryV3): Story {
     storyRev: version,
     rating: story.rating,
     published: story.published,
+    visibility: story.visibility ?? (story.published ? "public" : "private"),
     category: story.category,
     allowNameChange: story.allowNameChange,
     locale: story.locale,

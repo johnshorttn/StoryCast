@@ -166,7 +166,11 @@ export function normalizeStory(raw: unknown): Story | null {
     title: title || STARTER_STORY.title,
     storyRev: version,
     rating: age === "18+" ? "explicit" : "general",
-    published: raw.published !== false,
+    published: raw.visibility ? raw.visibility === "public" : raw.published !== false,
+    visibility:
+      raw.visibility === "public" || raw.visibility === "unlisted" || raw.visibility === "private"
+        ? raw.visibility
+        : raw.published !== false ? "public" : "private",
     category,
     allowNameChange: raw.allowNameChange !== false,
     locale: String(raw.locale || "en-US"),

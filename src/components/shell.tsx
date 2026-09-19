@@ -3,6 +3,7 @@ import { Radio } from "lucide-react";
 import type { ReactNode } from "react";
 import { AgeGate } from "@/components/age-gate";
 import { cn } from "@/lib/utils";
+import { UserButton } from "@/lib/auth/gates";
 
 export function Shell({ children, wide }: { children: ReactNode; wide?: boolean }) {
   return (
@@ -34,6 +35,7 @@ export function Shell({ children, wide }: { children: ReactNode; wide?: boolean 
               >
                 Admin
               </Link>
+              <UserButton />
             </nav>
           </div>
         </header>
