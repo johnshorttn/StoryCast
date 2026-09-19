@@ -9,6 +9,7 @@ import { displayTitle, type Story } from "@/lib/story-types";
 import { useStoryStore } from "@/lib/story-store";
 import { cn } from "@/lib/utils";
 import { SignInGate } from "@/lib/auth/gates";
+import { getStoryRewriteCapability, rewriteStoryAsV2 } from "@/lib/story-rewrite";
 
 export const Route = createFileRoute("/admin")({ component: AdminRoute });
 
@@ -44,10 +45,16 @@ function Admin() {
   const [prompt, setPrompt] = useState("");
   const [log, setLog] = useState("Ask for a draft in the Storycast JSON layout. Then use JSON in reply.");
   const [lastGrok, setLastGrok] = useState("");
+  const [rewriteInstruction, setRewriteInstruction] = useState("");
+  const [rewriting, setRewriting] = useState(false);
+  const [rewriteModel, setRewriteModel] = useState("");
   const fileRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     void hydrate(true);
+    void getStoryRewriteCapability().then((capability) =>
+      setRewriteModel(capability.configured ? capability.model : "not configured"),
+    );
   }, [hydrate]);
 
   const cats = [...new Set(all.map((s) => s.category || s.config.category || "uncategorized"))];
@@ -86,11 +93,12 @@ function Admin() {
 
   async function onJsonFiles(files: FileList | null) {
     if (!files?.length) return;
-    const names = [...files].map((f) => f.name).join(", ");
+    const selectedFiles = [...files];
+    const names = selectedFiles.map((f) => f.name).join(", ");
     const texts: string[] = [];
-    for (const file of files) {
-      if (!file.name.toLowerCase().endsWith(".json") && file.type && file.type !== "application/json") {
-        setStatus(`${file.name} is not a JSON file`);
+    for (const file of selectedFiles) {
+      if (!/\.(json|txt|md|markdown)$/i.test(file.name)) {
+        setStatus(`${file.name} must be JSON, text, or Markdown`);
         return;
       }
       texts.push(await file.text());
@@ -98,7 +106,7 @@ function Admin() {
     const blob = texts.join("\n");
     setBulk(blob);
     setStatus(`Loaded ${names}`);
-    await applyImport(blob);
+    if (selectedFiles.every((file) => file.name.toLowerCase().endsWith(".json"))) await applyImport(blob);
     if (fileRef.current) fileRef.current.value = "";
   }
 
@@ -289,14 +297,14 @@ function Admin() {
           {tab === "import" ? (
             <div>
               <p className="mb-2 text-sm text-muted">
-                Upload one or more `.json` files, or paste Grok’s fenced JSON. Missing narrator, characterCount, and
-                title/series fields are filled in. Duplicate ids in the batch are skipped.
+                  Upload JSON, text, or Markdown. Valid StoryCast JSON can be imported directly; prose and legacy
+                  formats can be rewritten into a reviewable v2 cast draft by the local model.
               </p>
               <div className="mb-3 flex flex-wrap gap-2">
                 <input
                   ref={fileRef}
                   type="file"
-                  accept="application/json,.json"
+                  accept="application/json,text/plain,text/markdown,.json,.txt,.md,.markdown"
                   multiple
                   className="hidden"
                   onChange={(e) => void onJsonFiles(e.target.files)}
@@ -307,7 +315,7 @@ function Admin() {
                   onClick={() => fileRef.current?.click()}
                 >
                   <Upload className="size-4" />
-                  Upload JSON file
+                  Upload story file
                 </button>
               </div>
               <textarea
@@ -324,6 +332,48 @@ function Admin() {
               >
                 Validate and import
               </button>
+              <div className="mt-4 rounded-md bg-raised p-3">
+                <p className="font-display text-sm text-fg">Rewrite into StoryCast v2</p>
+                <p className="mt-1 text-xs text-muted">Local model: {rewriteModel || "checking…"}</p>
+                <label className="mt-2 block text-sm text-muted">
+                  Optional editor direction
+                  <input
+                    className="mt-1 min-h-11 w-full rounded-md border border-border bg-bg px-3 text-fg"
+                    value={rewriteInstruction}
+                    onChange={(event) => setRewriteInstruction(event.target.value)}
+                    placeholder="Preserve every scene; make dialogue more natural."
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={rewriting || !bulk.trim() || rewriteModel === "not configured"}
+                  className="mt-2 min-h-11 w-full rounded-md bg-primary px-4 font-semibold text-primary-fg disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={async () => {
+                    setRewriting(true);
+                    setStatus("Analyzing and rewriting story…");
+                    try {
+                      const result = await rewriteStoryAsV2({
+                        data: { content: bulk, instruction: rewriteInstruction },
+                      });
+                      if (!result.ok) {
+                        setStatus(result.error);
+                        return;
+                      }
+                      setCurrentId("");
+                      setDraft(result.story);
+                      setJson(JSON.stringify(result.story, null, 2));
+                      setStatus(`Rewritten as v2 with ${result.model} — review before saving`);
+                      setTab("fields");
+                    } catch (error) {
+                      setStatus(error instanceof Error ? error.message : "Rewrite failed");
+                    } finally {
+                      setRewriting(false);
+                    }
+                  }}
+                >
+                  {rewriting ? "Rewriting…" : "Analyze and rewrite as v2"}
+                </button>
+              </div>
               {report ? (
                 <div className="mt-3 space-y-2 text-sm">
                   {report.imported.length ? (

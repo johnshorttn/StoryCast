@@ -1,0 +1,25 @@
+services:
+  story-model:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:11434:11434"
+    volumes:
+      - story-models:/root/.ollama
+
+  story-model-setup:
+    image: curlimages/curl:latest
+    depends_on:
+      - story-model
+    restart: "no"
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        until curl -fsS http://story-model:11434/api/version; do sleep 2; done;
+        curl -fsS http://story-model:11434/api/pull
+        -H 'Content-Type: application/json'
+        -d '{"name":"qwen3:4b","stream":false}'
+
+volumes:
+  story-models:

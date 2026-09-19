@@ -52,6 +52,18 @@ select xAI, Kokoro, or Sherpa voices when downloading an episode.
 Story edits are stored in Postgres when `DATABASE_URL` is configured. Every save creates an immutable revision before
 updating the live catalog record. Without `DATABASE_URL`, local development uses temporary in-memory PGLite storage.
 
+## Local story rewrite model
+
+StoryCast can analyze prose, Markdown, legacy scripts, or off-schema JSON and rewrite it into a validated unpublished
+v2 cast draft. The default lightweight model is `qwen3:4b`, served through Ollama's OpenAI-compatible endpoint.
+
+```bash
+docker compose -f docker-compose.story-ai.yml up -d
+```
+
+Then set `STORY_MODEL_BASE_URL=http://127.0.0.1:11434/v1` and `STORY_MODEL_NAME=qwen3:4b`. The rewrite preserves the
+source's lawful adult themes and classifies explicit work as `18+`; it does not automatically publish the result.
+
 ## License
 
 Private project files unless you add a license.
