@@ -11,14 +11,29 @@ import {
   type Gender,
   type Story,
 } from "@/lib/story-types";
-import { CAST_VOICES, defaultVoiceId } from "@/lib/tts-catalog";
-import { synthTts } from "@/lib/tts";
+import {
+  CAST_VOICES,
+  defaultVoiceId,
+  voiceMatchScore,
+  type VoiceAccent,
+  type VoiceProvider,
+  type VoiceTone,
+} from "@/lib/tts-catalog";
+import { getTtsCapabilities, synthTts } from "@/lib/tts";
 import { clipsToWav, downloadBlob } from "@/lib/audio-export";
 import { useStoryStore } from "@/lib/story-store";
 import { cn } from "@/lib/utils";
 import { ensureVoices, speakLine, stopSpeech, voiceOptions, type VoiceOption } from "@/lib/speech";
 
-type PlayerVoice = { id: string; label: string; gender: Gender; source: "cloud" | "device" };
+type PlayerVoice = {
+  id: string;
+  label: string;
+  gender: Gender;
+  provider: VoiceProvider | "device";
+  accent: VoiceAccent;
+  tone: VoiceTone;
+  available: boolean;
+};
 
 function playDataUrl(
   el: HTMLAudioElement,
@@ -129,6 +144,8 @@ function VoiceBlock({
   onPreview,
   previewing,
   voices,
+  accent,
+  tone,
 }: {
   id: string;
   isNarrator: boolean;
@@ -142,9 +159,16 @@ function VoiceBlock({
   onPreview: () => void;
   previewing: boolean;
   voices: PlayerVoice[];
+  accent: VoiceAccent;
+  tone: VoiceTone;
 }) {
   const sex: Gender = gender === "female" ? "female" : "male";
-  const filteredVoices = voices.filter((v) => v.gender === sex || v.gender === "neutral");
+  const filteredVoices = voices
+    .filter((v) => v.gender === sex || v.gender === "neutral")
+    .sort((a, b) =>
+      voiceMatchScore(b, { gender: sex, accent, tone }) - voiceMatchScore(a, { gender: sex, accent, tone }) ||
+      a.label.localeCompare(b.label),
+    );
   const selected = filteredVoices.some((v) => v.id === voice) ? voice : (filteredVoices[0]?.id ?? "");
 
   return (
@@ -193,8 +217,8 @@ function VoiceBlock({
           onChange={(e) => onGenderVoice(sex, e.target.value)}
         >
           {filteredVoices.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.label} · {v.source === "cloud" ? "cloud" : "device"}
+            <option key={v.id} value={v.id} disabled={!v.available}>
+              {v.accent === accent && v.tone === tone ? "★ " : ""}{v.label} · {v.provider}{v.available ? "" : " (not configured)"}
             </option>
           ))}
         </select>
@@ -245,6 +269,9 @@ export function Player({
   });
   const [deviceVoiceRecords, setDeviceVoiceRecords] = useState<SpeechSynthesisVoice[]>([]);
   const [deviceVoiceOptions, setDeviceVoiceOptions] = useState<VoiceOption[]>([]);
+  const [capabilities, setCapabilities] = useState<Record<VoiceProvider, boolean>>({ xai: false, kokoro: false, sherpa: false });
+  const [preferredAccent, setPreferredAccent] = useState<VoiceAccent>("american");
+  const [preferredTone, setPreferredTone] = useState<VoiceTone>("warm");
   const [active, setActive] = useState(saved?.beat ?? -1);
   const [playing, setPlaying] = useState(false);
   const [phase, setPhase] = useState<"idle" | "rendering" | "playing">("idle");
@@ -262,6 +289,7 @@ export function Player({
       setDeviceVoiceRecords(records);
       setDeviceVoiceOptions(voiceOptions(records));
     });
+    void getTtsCapabilities().then(setCapabilities);
   }, []);
 
   useEffect(() => {
@@ -311,15 +339,18 @@ export function Player({
   const spoken = useMemo(() => spokenNames(story, names, speak), [story, names, speak]);
   const availableVoices = useMemo<PlayerVoice[]>(
     () => [
-      ...CAST_VOICES.map((voice) => ({ ...voice, source: "cloud" as const })),
+      ...CAST_VOICES.map((voice) => ({ ...voice, available: capabilities[voice.provider] })),
       ...deviceVoiceOptions.map((voice) => ({
         id: `device:${voice.uri}`,
         label: `${voice.name}${voice.lang ? ` (${voice.lang})` : ""}`,
         gender: voice.gender,
-        source: "device" as const,
+        provider: "device" as const,
+        accent: /^en-GB/i.test(voice.lang) ? "british" as const : /^en-US/i.test(voice.lang) ? "american" as const : "neutral" as const,
+        tone: "neutral" as const,
+        available: true,
       })),
     ],
-    [deviceVoiceOptions],
+    [capabilities, deviceVoiceOptions],
   );
 
   const lines = useMemo(
@@ -344,8 +375,13 @@ export function Player({
 
   function setGenderVoice(id: string, gender: Gender, voice: string) {
     const sex: Gender = gender === "female" ? "female" : "male";
-    const allowed = availableVoices.filter((v) => v.gender === sex || v.gender === "neutral");
-    const nextVoice = allowed.some((v) => v.id === voice) ? voice : defaultVoiceId(sex, id);
+    const allowed = availableVoices.filter((v) => v.available && (v.gender === sex || v.gender === "neutral"));
+    const fallback = [...allowed].sort(
+      (a, b) =>
+        voiceMatchScore(b, { gender: sex, accent: preferredAccent, tone: preferredTone }) -
+        voiceMatchScore(a, { gender: sex, accent: preferredAccent, tone: preferredTone }),
+    )[0]?.id;
+    const nextVoice = allowed.some((v) => v.id === voice) ? voice : (fallback || defaultVoiceId(sex, id));
     setGenders((prev) => ({ ...prev, [id]: sex }));
     setVoiceId((prev) => ({ ...prev, [id]: nextVoice }));
   }
@@ -568,8 +604,38 @@ export function Player({
         <aside className="h-fit rounded-lg bg-surface p-4 shadow-[var(--shadow-border)]">
           <p className="font-display text-base">Voices</p>
           <p className="mb-3 text-sm text-muted">
-            Gender filters the voice list. Playback speed and resume stay on this device.
+            Pick a voice profile and StoryCast ranks the closest matches across every configured provider.
           </p>
+          <div className="mb-4 grid grid-cols-2 gap-2">
+            <label className="text-sm text-muted">
+              Accent
+              <select
+                className="mt-1 min-h-11 w-full rounded-md border border-border bg-bg px-2 text-fg"
+                value={preferredAccent}
+                onChange={(event) => setPreferredAccent(event.target.value as VoiceAccent)}
+              >
+                <option value="american">American</option>
+                <option value="british">British</option>
+                <option value="neutral">Any accent</option>
+              </select>
+            </label>
+            <label className="text-sm text-muted">
+              Tone
+              <select
+                className="mt-1 min-h-11 w-full rounded-md border border-border bg-bg px-2 text-fg"
+                value={preferredTone}
+                onChange={(event) => setPreferredTone(event.target.value as VoiceTone)}
+              >
+                <option value="warm">Warm</option>
+                <option value="clear">Clear</option>
+                <option value="soft">Soft</option>
+                <option value="deep">Deep</option>
+                <option value="bright">Bright</option>
+                <option value="dramatic">Dramatic</option>
+                <option value="neutral">Any tone</option>
+              </select>
+            </label>
+          </div>
           <div className="mb-4">
             <p className="mb-2 text-sm text-muted">Speed</p>
             <div className="flex gap-2">
@@ -603,6 +669,8 @@ export function Player({
                 onGenderVoice={(g, v) => setGenderVoice(c.id, g, v)}
                 previewing={phase !== "idle" && !playing}
                 voices={availableVoices}
+                accent={preferredAccent}
+                tone={preferredTone}
                 onPreview={() => {
                   const sample =
                     c.id === "narrator"

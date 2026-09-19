@@ -42,8 +42,10 @@ Admin → Import accepts one file, many files, a single object, an array, or fen
 ## Voices
 
 Voices come from the xAI TTS API. Set `XAI_API_KEY` on the server. Male and female IDs live in `src/lib/tts-catalog.ts`.
-Compatible browser/device voices are discovered at runtime. Device voices play locally and cannot be included in WAV
-exports; select cloud voices when downloading an episode.
+Compatible browser/device voices are discovered at runtime. Kokoro and Sherpa-ONNX can be connected through the
+optional adapter URLs in `.env.example`. The player ranks equivalent voices by gender, American/British accent, and
+tone (warm, clear, soft, deep, bright, or dramatic). Device voices play locally and cannot be included in WAV exports;
+select xAI, Kokoro, or Sherpa voices when downloading an episode.
 
 ## Data
 
