@@ -55,6 +55,18 @@ async function rateLimitKey() {
 }
 
 async function allowedRequest() {
+  try {
+    const { getSessionUser } = await import("./auth/verify.server");
+    const user = await getSessionUser();
+    if (user) {
+      const { ensurePlatformRole } = await import("./platform-roles.server");
+      const { roleCan } = await import("./platform-roles");
+      const role = await ensurePlatformRole(user);
+      if (roleCan(role, "bypass_account_limits")) return true;
+    }
+  } catch {
+    /* fall through to the shared IP window */
+  }
   const key = await rateLimitKey();
   const now = Date.now();
   const current = requests.get(key);

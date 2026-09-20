@@ -1,10 +1,28 @@
 import { Link } from "@tanstack/react-router";
-import type { ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { AgeGate } from "@/components/age-gate";
 import { cn } from "@/lib/utils";
 import { UserButton } from "@/lib/auth/gates";
+import { useCurrentUser } from "@/lib/auth/use-current-user";
+import { getCurrentPlatformRole } from "@/lib/platform-roles-api";
+import { isOwnerRole, type PlatformRole } from "@/lib/platform-roles";
 
 export function Shell({ children, wide }: { children: ReactNode; wide?: boolean }) {
+  const user = useCurrentUser();
+  const [role, setRole] = useState<PlatformRole | null>(null);
+  useEffect(() => {
+    if (!user) {
+      setRole(null);
+      return;
+    }
+    void getCurrentPlatformRole()
+      .then((access) => setRole(access.role))
+      .catch(() => setRole("user"));
+  }, [user]);
+  const adminLabel = role && (isOwnerRole(role) || role === "developer" || role === "moderator")
+    ? "Site Admin"
+    : "My stories";
+
   return (
     <AgeGate>
       <div className="min-h-dvh bg-bg text-fg">
@@ -12,7 +30,7 @@ export function Shell({ children, wide }: { children: ReactNode; wide?: boolean 
           <div
             className={cn(
               "mx-auto flex items-center justify-between gap-3 px-4 py-3",
-              wide ? "max-w-6xl" : "max-w-5xl",
+              wide ? "max-w-7xl" : "max-w-5xl",
             )}
           >
             <Link to="/" className="flex items-center gap-2 text-fg no-underline">
@@ -36,13 +54,13 @@ export function Shell({ children, wide }: { children: ReactNode; wide?: boolean 
                 to="/admin"
                 className="inline-flex min-h-11 items-center rounded-md px-3 text-muted no-underline hover:text-fg"
               >
-                Admin
+                {adminLabel}
               </Link>
               <UserButton />
             </nav>
           </div>
         </header>
-        <div className={cn("mx-auto px-4 py-6", wide ? "max-w-6xl" : "max-w-5xl")}>{children}</div>
+        <div className={cn("mx-auto px-4 py-6", wide ? "max-w-7xl" : "max-w-5xl")}>{children}</div>
       </div>
     </AgeGate>
   );

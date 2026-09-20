@@ -1,9 +1,12 @@
 import { createServerFn } from "@tanstack/react-start";
+import { assertAdminApiAccess } from "./platform-admin";
 import { reportReconciles, summarizeFinance, type BillingLedgerEntry } from "./finance-report";
 
 async function requireFinanceAdmin() {
   const { requirePlatformCapability } = await import("./platform-roles.server");
-  return requirePlatformCapability("view_finance");
+  const access = await requirePlatformCapability("view_finance");
+  assertAdminApiAccess(access.role, "getFinancialReport", access.elevatedCapabilities);
+  return access;
 }
 
 export const getFinancialReport = createServerFn({ method: "GET" })

@@ -1,22 +1,69 @@
 import { createServerFn } from "@tanstack/react-start";
-import { capabilitiesForRole, normalizePlatformRole, type PlatformRole } from "./platform-roles";
-import { activeElevatedCapabilities, ensurePlatformRole, requirePermanentOwner } from "./platform-roles.server";
+import { effectiveEntitlements, normalizeTier, type AccountTier } from "./account-tiers";
+import { assertAdminApiAccess } from "./platform-admin";
+import { normalizePlatformRole, type PlatformRole } from "./platform-roles";
+import { currentPlatformAccess, requirePermanentOwner } from "./platform-roles.server";
+
+async function accountTierFor(userId: string): Promise<AccountTier> {
+  const { getSql } = await import("./db");
+  const sql = await getSql();
+  await sql`insert into user_tiers (user_id) values (${userId}) on conflict (user_id) do nothing`;
+  const rows = await sql<{ tier: string }>`select tier from user_tiers where user_id = ${userId} and status = 'active'
+    and (current_period_end is null or current_period_end > now())`;
+  return normalizeTier(rows[0]?.tier);
+}
 
 export const getCurrentPlatformRole = createServerFn({ method: "GET" }).handler(async () => {
-  const { requireUser } = await import("./auth/verify.server");
-  const user = await requireUser();
-  const role = await ensurePlatformRole(user);
-  const elevatedCapabilities = await activeElevatedCapabilities(user.id);
-  return { role, capabilities: [...new Set([...capabilitiesForRole(role), ...elevatedCapabilities])], elevatedCapabilities };
+  const access = await currentPlatformAccess();
+  const tier = await accountTierFor(access.user.id);
+  return {
+    role: access.role,
+    capabilities: access.capabilities,
+    elevatedCapabilities: access.elevatedCapabilities,
+    tier,
+    entitlements: effectiveEntitlements(access.role, tier),
+  };
 });
 
 export const listPlatformUsers = createServerFn({ method: "GET" }).handler(async () => {
-  await requirePermanentOwner();
+  const access = await requirePermanentOwner();
+  assertAdminApiAccess(access.role, "listPlatformUsers");
   const { getSql } = await import("./db");
+  const { hasAuthUserTable } = await import("./auth-tables.server");
   const sql = await getSql();
-  return sql.query<{ id: string; name: string; email: string; role: PlatformRole }>(
-    `select u.id, u.name, u.email, coalesce(r.role, 'user') as role
-     from "user" u left join user_roles r on r.user_id = u.id
+  if (!(await hasAuthUserTable(sql))) {
+    return sql.query<{
+      id: string;
+      name: string;
+      email: string;
+      role: PlatformRole;
+      tier: AccountTier;
+      tier_status: string | null;
+      current_period_end: string | null;
+    }>(
+      `select r.user_id as id, coalesce(r.user_id, 'Account') as name, '' as email, r.role,
+         coalesce(t.tier, 'free') as tier, t.status as tier_status, t.current_period_end::text
+       from user_roles r
+       left join user_tiers t on t.user_id = r.user_id
+       order by case r.role
+         when 'owner' then 1 when 'developer' then 2 when 'moderator' then 3 else 4 end,
+         r.user_id`,
+    );
+  }
+  return sql.query<{
+    id: string;
+    name: string;
+    email: string;
+    role: PlatformRole;
+    tier: AccountTier;
+    tier_status: string | null;
+    current_period_end: string | null;
+  }>(
+    `select u.id, u.name, u.email, coalesce(r.role, 'user') as role,
+       coalesce(t.tier, 'free') as tier, t.status as tier_status, t.current_period_end::text
+     from "user" u
+     left join user_roles r on r.user_id = u.id
+     left join user_tiers t on t.user_id = u.id
      order by case coalesce(r.role, 'user')
        when 'owner' then 1 when 'developer' then 2 when 'moderator' then 3 else 4 end,
        lower(u.email)`,
@@ -27,6 +74,7 @@ export const setPlatformUserRole = createServerFn({ method: "POST" })
   .validator((input: { userId: string; role: PlatformRole }) => input)
   .handler(async ({ data }) => {
     const actor = await requirePermanentOwner();
+    assertAdminApiAccess(actor.role, "setPlatformUserRole");
     const role = normalizePlatformRole(data.role);
     const userId = data.userId.trim();
     if (!userId) throw new Error("User is required");

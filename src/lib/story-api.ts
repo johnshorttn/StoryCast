@@ -1,6 +1,12 @@
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { createServerFn } from "@tanstack/react-start";
-import { normalizeTier, TIER_ENTITLEMENTS, type AccountTier } from "./account-tiers";
+import {
+  effectiveEntitlements,
+  entitlementLimitReached,
+  normalizeTier,
+  type AccountTier,
+} from "./account-tiers";
+import { assertAdminApiAccess } from "./platform-admin";
 import type { Story } from "./story-types";
 import { normalizeStory, validateStory } from "./story-validate";
 import { storyV2ToV3 } from "./story-v3";
@@ -31,14 +37,24 @@ async function accountTier(userId: string): Promise<AccountTier> {
   return normalizeTier(rows[0]?.tier);
 }
 
+async function storyActor() {
+  const { currentPlatformAccess } = await import("./platform-roles.server");
+  const access = await currentPlatformAccess();
+  const tier = await accountTier(access.user.id);
+  return { ...access, tier, entitlements: effectiveEntitlements(access.role, tier) };
+}
+
 function shareHash(token: string) {
   return createHash("sha256").update(token).digest("hex");
 }
 
 export const getAccountTier = createServerFn({ method: "GET" }).handler(async () => {
-  const userId = await authenticatedUser();
-  const tier = await accountTier(userId);
-  return { tier, entitlements: TIER_ENTITLEMENTS[tier] };
+  const actor = await storyActor();
+  return {
+    tier: actor.tier,
+    role: actor.role,
+    entitlements: actor.entitlements,
+  };
 });
 
 export const listPublishedStories = createServerFn({ method: "GET" }).handler(async () => {
@@ -57,7 +73,8 @@ export const listManagedStories = createServerFn({ method: "GET" }).handler(asyn
 export const saveManagedStory = createServerFn({ method: "POST" })
   .validator((input: { story: Story }) => input)
   .handler(async ({ data }) => {
-    const ownerId = await authenticatedUser();
+    const actor = await storyActor();
+    const ownerId = actor.user.id;
     const story = normalizeStory(data.story);
     if (!story) throw new Error("Story data is invalid");
     const errors = validateStory(story).filter((issue) => issue.level === "error");
@@ -66,10 +83,9 @@ export const saveManagedStory = createServerFn({ method: "POST" })
     const existing = await sql<{ owner_id: string }>`select owner_id from stories where id = ${story.id}`;
     if (existing[0] && existing[0].owner_id !== ownerId) throw new Error("That story ID is already in use");
     if (!existing[0]) {
-      const tier = await accountTier(ownerId);
       const count = await sql<{ count: number }>`select count(*)::int as count from stories where owner_id = ${ownerId}`;
-      if ((count[0]?.count ?? 0) >= TIER_ENTITLEMENTS[tier].stories) {
-        throw new Error(`${tier} tier allows ${TIER_ENTITLEMENTS[tier].stories} stories`);
+      if (entitlementLimitReached(actor.entitlements.stories, count[0]?.count ?? 0)) {
+        throw new Error(`${actor.tier} tier allows ${actor.entitlements.stories} stories`);
       }
     }
     const current = await sql<{ revision: number }>`
@@ -110,18 +126,18 @@ export const deleteManagedStory = createServerFn({ method: "POST" })
 export const createStoryShare = createServerFn({ method: "POST" })
   .validator((input: { storyId: string; label?: string; expiresInDays?: number }) => input)
   .handler(async ({ data }) => {
-    const ownerId = await authenticatedUser();
+    const actor = await storyActor();
+    const ownerId = actor.user.id;
     const sql = await database();
     const owned = await sql<{ id: string }>`select id from stories where id = ${data.storyId} and owner_id = ${ownerId}`;
     if (!owned[0]) throw new Error("Story not found");
-    const tier = await accountTier(ownerId);
     const count = await sql<{ count: number }>`
       select count(*)::int as count from story_shares
       where story_id = ${data.storyId} and owner_id = ${ownerId} and revoked_at is null
         and (expires_at is null or expires_at > now())
     `;
-    if ((count[0]?.count ?? 0) >= TIER_ENTITLEMENTS[tier].activeShareLinksPerStory) {
-      throw new Error(`${tier} tier share-link limit reached`);
+    if (entitlementLimitReached(actor.entitlements.activeShareLinksPerStory, count[0]?.count ?? 0)) {
+      throw new Error(`${actor.tier} tier share-link limit reached`);
     }
     const token = randomBytes(32).toString("base64url");
     const days = Math.max(1, Math.min(365, Number(data.expiresInDays) || 30));
@@ -170,4 +186,66 @@ export const loadSharedStory = createServerFn({ method: "GET" })
     if (!row) return null;
     await sql`update story_shares set last_accessed_at = now() where id = ${row.share_id}`;
     return storyFromRow(row);
+  });
+
+export const listSiteStories = createServerFn({ method: "GET" }).handler(async () => {
+  const { requirePlatformCapability } = await import("./platform-roles.server");
+  const access = await requirePlatformCapability("view_moderation_queue");
+  assertAdminApiAccess(access.role, "listSiteStories", access.elevatedCapabilities);
+  const sql = await database();
+  const { hasAuthUserTable } = await import("./auth-tables.server");
+  const joinUsers = await hasAuthUserTable(sql);
+  return sql.query<{
+    id: string;
+    owner_id: string;
+    owner_name: string | null;
+    owner_email: string | null;
+    visibility: string;
+    published: boolean;
+    title: string;
+    updated_at: string;
+  }>(
+    joinUsers
+      ? `select s.id, s.owner_id, u.name as owner_name, u.email as owner_email, s.visibility, s.published,
+           coalesce(s.payload->'config'->>'title', s.payload->>'title', s.id) as title,
+           s.updated_at::text
+         from stories s
+         left join "user" u on u.id = s.owner_id
+         order by s.updated_at desc
+         limit 250`
+      : `select s.id, s.owner_id, null as owner_name, null as owner_email, s.visibility, s.published,
+           coalesce(s.payload->'config'->>'title', s.payload->>'title', s.id) as title,
+           s.updated_at::text
+         from stories s
+         order by s.updated_at desc
+         limit 250`,
+  );
+});
+
+export const moderateSiteStory = createServerFn({ method: "POST" })
+  .validator((input: { storyId: string; action: "unpublish" | "unlist" | "delete" }) => input)
+  .handler(async ({ data }) => {
+    const { requirePlatformCapability } = await import("./platform-roles.server");
+    const access = await requirePlatformCapability("moderate_public_content");
+    assertAdminApiAccess(access.role, "moderateSiteStory", access.elevatedCapabilities);
+    const storyId = data.storyId.trim();
+    if (!storyId) throw new Error("Story is required");
+    const sql = await database();
+    const existing = await sql<{ id: string; owner_id: string }>`select id, owner_id from stories where id = ${storyId}`;
+    if (!existing[0]) throw new Error("Story not found");
+    if (data.action === "delete") {
+      await sql`delete from stories where id = ${storyId}`;
+      return { storyId, action: data.action };
+    }
+    const visibility = data.action === "unlist" ? "unlisted" : "private";
+    await sql.query(
+      `update stories
+       set visibility = $2, published = false, payload = jsonb_set(
+         jsonb_set(payload, '{visibility}', to_jsonb($2::text), true),
+         '{published}', 'false'::jsonb, true
+       ), updated_at = now()
+       where id = $1`,
+      [storyId, visibility],
+    );
+    return { storyId, action: data.action, visibility };
   });

@@ -8,16 +8,27 @@ export type PlatformCapability =
   | "manage_integrations"
   | "view_finance"
   | "manage_billing"
-  | "manage_roles";
+  | "manage_roles"
+  | "bypass_account_limits";
+
+export const ALL_PLATFORM_CAPABILITIES: readonly PlatformCapability[] = [
+  "manage_own_stories",
+  "redeem_gifts",
+  "moderate_public_content",
+  "view_moderation_queue",
+  "view_system_health",
+  "manage_integrations",
+  "view_finance",
+  "manage_billing",
+  "manage_roles",
+  "bypass_account_limits",
+];
 
 const ROLE_CAPABILITIES: Record<PlatformRole, readonly PlatformCapability[]> = {
   user: ["manage_own_stories", "redeem_gifts"],
   moderator: ["manage_own_stories", "redeem_gifts", "moderate_public_content", "view_moderation_queue"],
   developer: ["manage_own_stories", "redeem_gifts", "view_system_health", "manage_integrations"],
-  owner: [
-    "manage_own_stories", "redeem_gifts", "moderate_public_content", "view_moderation_queue",
-    "view_system_health", "manage_integrations", "view_finance", "manage_billing", "manage_roles",
-  ],
+  owner: ALL_PLATFORM_CAPABILITIES,
 };
 
 export function normalizePlatformRole(value: unknown): PlatformRole {
@@ -30,6 +41,10 @@ export function roleCan(role: PlatformRole, capability: PlatformCapability) {
 
 export function capabilitiesForRole(role: PlatformRole) {
   return [...ROLE_CAPABILITIES[role]];
+}
+
+export function isOwnerRole(role: PlatformRole) {
+  return role === "owner";
 }
 
 export const TEMPORARILY_GRANTABLE_CAPABILITIES: readonly PlatformCapability[] = [
