@@ -12,7 +12,30 @@ async function requireBillingAdmin() {
 export const listBillingAccounts = createServerFn({ method: "GET" }).handler(async () => {
   await requireBillingAdmin();
   const { getSql } = await import("./db");
+  const { hasAuthUserTable } = await import("./auth-tables.server");
   const sql = await getSql();
+  if (!(await hasAuthUserTable(sql))) {
+    return sql.query<{
+      id: string;
+      name: string;
+      email: string;
+      role: string;
+      tier: AccountTier;
+      status: string | null;
+      current_period_end: string | null;
+      stories: number;
+    }>(
+      `select r.user_id as id, r.user_id as name, '' as email, r.role,
+         coalesce(t.tier, 'free') as tier, t.status, t.current_period_end::text,
+         coalesce(s.stories, 0)::int as stories
+       from user_roles r
+       left join user_tiers t on t.user_id = r.user_id
+       left join (
+         select owner_id, count(*)::int as stories from stories group by owner_id
+       ) s on s.owner_id = r.user_id
+       order by r.user_id`,
+    );
+  }
   return sql.query<{
     id: string;
     name: string;

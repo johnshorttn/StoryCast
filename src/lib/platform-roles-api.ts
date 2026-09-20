@@ -29,7 +29,27 @@ export const listPlatformUsers = createServerFn({ method: "GET" }).handler(async
   const access = await requirePermanentOwner();
   assertAdminApiAccess(access.role, "listPlatformUsers");
   const { getSql } = await import("./db");
+  const { hasAuthUserTable } = await import("./auth-tables.server");
   const sql = await getSql();
+  if (!(await hasAuthUserTable(sql))) {
+    return sql.query<{
+      id: string;
+      name: string;
+      email: string;
+      role: PlatformRole;
+      tier: AccountTier;
+      tier_status: string | null;
+      current_period_end: string | null;
+    }>(
+      `select r.user_id as id, coalesce(r.user_id, 'Account') as name, '' as email, r.role,
+         coalesce(t.tier, 'free') as tier, t.status as tier_status, t.current_period_end::text
+       from user_roles r
+       left join user_tiers t on t.user_id = r.user_id
+       order by case r.role
+         when 'owner' then 1 when 'developer' then 2 when 'moderator' then 3 else 4 end,
+         r.user_id`,
+    );
+  }
   return sql.query<{
     id: string;
     name: string;

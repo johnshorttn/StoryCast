@@ -33,7 +33,9 @@ export const listTemporaryAdminRequests = createServerFn({ method: "GET" }).hand
   const access = await requirePermanentOwner();
   assertAdminApiAccess(access.role, "listTemporaryAdminRequests");
   const { getSql } = await import("./db");
+  const { hasAuthUserTable } = await import("./auth-tables.server");
   const sql = await getSql();
+  if (!(await hasAuthUserTable(sql))) return [];
   return sql.query<{
     id: string; user_id: string; name: string; email: string; requested_capabilities: PlatformCapability[];
     reason: string; status: string; requested_at: string; approved_until: string | null;

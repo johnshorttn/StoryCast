@@ -1,4 +1,5 @@
 import { createServerFn } from "@tanstack/react-start";
+import { countAuthUsers } from "./auth-tables.server";
 import { assertAdminApiAccess } from "./platform-admin";
 import { configuredOwnerEmails } from "./platform-roles.server";
 
@@ -11,7 +12,7 @@ export const getSystemStatus = createServerFn({ method: "GET" }).handler(async (
   const { emailAndPasswordEnabled } = await import("./auth/email-password");
   const sql = await getSql();
   const [users, stories, publicStories, pending] = await Promise.all([
-    sql<{ count: number }>`select count(*)::int as count from "user"`,
+    countAuthUsers(sql),
     sql<{ count: number }>`select count(*)::int as count from stories`,
     sql<{ count: number }>`select count(*)::int as count from stories where visibility = 'public'`,
     sql<{ count: number }>`select count(*)::int as count from privilege_elevation_requests where status = 'pending'`,
@@ -29,7 +30,7 @@ export const getSystemStatus = createServerFn({ method: "GET" }).handler(async (
     rewriteModel: Boolean(process.env.STORY_MODEL_BASE_URL?.trim() && process.env.STORY_MODEL_NAME?.trim()),
     ownerEmailsConfigured: configuredOwnerEmails().length,
     counts: {
-      users: users[0]?.count ?? 0,
+      users,
       stories: stories[0]?.count ?? 0,
       publicStories: publicStories[0]?.count ?? 0,
       pendingElevations: pending[0]?.count ?? 0,
@@ -44,7 +45,7 @@ export const getSiteAdminOverview = createServerFn({ method: "GET" }).handler(as
   const { getSql } = await import("./db");
   const sql = await getSql();
   const [users, owners, stories, publicStories, pending, ledger] = await Promise.all([
-    sql<{ count: number }>`select count(*)::int as count from "user"`,
+    countAuthUsers(sql),
     sql<{ count: number }>`select count(*)::int as count from user_roles where role = 'owner'`,
     sql<{ count: number }>`select count(*)::int as count from stories`,
     sql<{ count: number }>`select count(*)::int as count from stories where visibility = 'public'`,
@@ -54,7 +55,7 @@ export const getSiteAdminOverview = createServerFn({ method: "GET" }).handler(as
       from billing_ledger where occurred_at >= now() - interval '30 days'`,
   ]);
   return {
-    users: users[0]?.count ?? 0,
+    users,
     owners: owners[0]?.count ?? 0,
     stories: stories[0]?.count ?? 0,
     publicStories: publicStories[0]?.count ?? 0,

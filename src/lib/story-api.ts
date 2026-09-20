@@ -193,6 +193,8 @@ export const listSiteStories = createServerFn({ method: "GET" }).handler(async (
   const access = await requirePlatformCapability("view_moderation_queue");
   assertAdminApiAccess(access.role, "listSiteStories", access.elevatedCapabilities);
   const sql = await database();
+  const { hasAuthUserTable } = await import("./auth-tables.server");
+  const joinUsers = await hasAuthUserTable(sql);
   return sql.query<{
     id: string;
     owner_id: string;
@@ -203,13 +205,20 @@ export const listSiteStories = createServerFn({ method: "GET" }).handler(async (
     title: string;
     updated_at: string;
   }>(
-    `select s.id, s.owner_id, u.name as owner_name, u.email as owner_email, s.visibility, s.published,
-       coalesce(s.payload->'config'->>'title', s.payload->>'title', s.id) as title,
-       s.updated_at::text
-     from stories s
-     left join "user" u on u.id = s.owner_id
-     order by s.updated_at desc
-     limit 250`,
+    joinUsers
+      ? `select s.id, s.owner_id, u.name as owner_name, u.email as owner_email, s.visibility, s.published,
+           coalesce(s.payload->'config'->>'title', s.payload->>'title', s.id) as title,
+           s.updated_at::text
+         from stories s
+         left join "user" u on u.id = s.owner_id
+         order by s.updated_at desc
+         limit 250`
+      : `select s.id, s.owner_id, null as owner_name, null as owner_email, s.visibility, s.published,
+           coalesce(s.payload->'config'->>'title', s.payload->>'title', s.id) as title,
+           s.updated_at::text
+         from stories s
+         order by s.updated_at desc
+         limit 250`,
   );
 });
 
