@@ -130,7 +130,7 @@ export function StoryForm({
       return;
     }
     const used = "voiceId" in data ? data.voiceId : vid;
-    const audio = new Audio(`data:${data.mime};base64,${data.b64}`);
+    const audio = new Audio(data.url || `data:${data.mime};base64,${data.b64}`);
     setPreviewMsg(`Playing ${beat.speaker} (${used})`);
     audio.onended = () => setPreviewMsg("");
     await audio.play().catch((err) => setPreviewMsg(String(err)));
@@ -191,6 +191,53 @@ export function StoryForm({
           />
         </label>
         <label className="block text-sm text-muted">
+          Presentation
+          <select
+            className="mt-1 min-h-11 w-full rounded-md border border-border bg-bg px-3 text-fg"
+            value={story.config.presentation ?? "book"}
+            onChange={(event) => {
+              const presentation = event.target.value === "anime" ? "anime" : "book";
+              patchConfig({
+                presentation,
+                anime: presentation === "anime"
+                  ? story.config.anime ?? { demographic: "general", visualStyle: "modern", episodeStructure: true }
+                  : undefined,
+              });
+            }}
+          >
+            <option value="book">Book</option>
+            <option value="anime">Anime-inspired</option>
+          </select>
+        </label>
+        {story.config.presentation === "anime" ? (
+          <>
+            <label className="block text-sm text-muted">
+              Anime audience
+              <select
+                className="mt-1 min-h-11 w-full rounded-md border border-border bg-bg px-3 text-fg"
+                value={story.config.anime?.demographic ?? "general"}
+                onChange={(event) => patchConfig({ anime: { ...story.config.anime, demographic: event.target.value as NonNullable<Story["config"]["anime"]>["demographic"] } })}
+              >
+                <option value="general">General</option><option value="kodomo">Kodomo</option>
+                <option value="shonen">Shōnen</option><option value="shojo">Shōjo</option>
+                <option value="seinen">Seinen</option><option value="josei">Josei</option>
+              </select>
+            </label>
+            <label className="block text-sm text-muted">
+              Visual style
+              <select
+                className="mt-1 min-h-11 w-full rounded-md border border-border bg-bg px-3 text-fg"
+                value={story.config.anime?.visualStyle ?? "modern"}
+                onChange={(event) => patchConfig({ anime: { ...story.config.anime, visualStyle: event.target.value as NonNullable<Story["config"]["anime"]>["visualStyle"] } })}
+              >
+                <option value="modern">Modern</option><option value="cel">Cel animation</option>
+                <option value="watercolor">Watercolor</option><option value="retro">Retro</option>
+                <option value="chibi">Chibi</option>
+              </select>
+            </label>
+          </>
+        ) : null}
+        <label className="block text-sm text-muted">
           Chapter
           <input
             type="number"
@@ -245,13 +292,20 @@ export function StoryForm({
           />
           Continuation
         </label>
-        <label className="flex min-h-11 items-center gap-2 text-sm text-fg">
-          <input
-            type="checkbox"
-            checked={story.published !== false}
-            onChange={(e) => patch({ published: e.target.checked })}
-          />
-          Published
+        <label className="block text-sm text-muted">
+          Visibility
+          <select
+            className="mt-1 min-h-11 w-full rounded-md border border-border bg-bg px-3 text-fg"
+            value={story.visibility ?? (story.published !== false ? "public" : "private")}
+            onChange={(event) => {
+              const visibility = event.target.value as "private" | "unlisted" | "public";
+              patch({ visibility, published: visibility === "public" });
+            }}
+          >
+            <option value="private">Private — only you</option>
+            <option value="unlisted">Unlisted — share links only</option>
+            <option value="public">Public — catalog</option>
+          </select>
         </label>
         <label className="flex min-h-11 items-center gap-2 text-sm text-fg">
           <input

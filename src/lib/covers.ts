@@ -9,6 +9,8 @@ export const COVER_PRESETS: CoverPreset[] = [
   { id: "night", label: "Night", bg: "#1c2733", ink: "#c5d6ea", mark: "#7aa2c8" },
   { id: "rose", label: "Rose", bg: "#2c1c24", ink: "#f0cfd8", mark: "#c45c7a" },
   { id: "slate", label: "Slate", bg: "#22201c", ink: "#e6dfd2", mark: "#a89880" },
+  { id: "sakura", label: "Sakura", bg: "#352331", ink: "#ffe8f3", mark: "#f58bb8" },
+  { id: "neon", label: "Anime Neon", bg: "#15152f", ink: "#e8f2ff", mark: "#6ee7ff" },
 ];
 
 export function coverById(id?: string) {
@@ -21,6 +23,7 @@ export function coverFromCategory(category: string) {
   if (key.includes("work")) return coverById("warehouse");
   if (key.includes("test")) return coverById("night");
   if (key.includes("fiction")) return coverById("rose");
+  if (key.includes("anime") || key.includes("manga")) return coverById("sakura");
   return coverById("ember");
 }
 

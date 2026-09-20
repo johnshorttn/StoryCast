@@ -13,6 +13,8 @@ JSON only when drafting a full story.`;
 export const askGrok = createServerFn({ method: "POST" })
   .validator((input: { prompt: string }) => input)
   .handler(async ({ data }) => {
+    const { requireUserId } = await import("./auth/verify.server");
+    await requireUserId();
     const apiKey = process.env.XAI_API_KEY;
     if (!apiKey) return { ok: false as const, error: "AI is not available in this environment" };
     const prompt = String(data.prompt || "").slice(0, 4000);

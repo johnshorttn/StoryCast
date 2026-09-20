@@ -14,6 +14,7 @@ import { Route as AdminRouteImport } from './routes/admin'
 import { Route as CastSlugRouteImport } from './routes/cast.$slug'
 import { Route as ListenStoryIdRouteImport } from './routes/listen.$storyId'
 import { Route as SeriesSlugRouteImport } from './routes/series.$slug'
+import { Route as ShareTokenRouteImport } from './routes/share.$token'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -40,6 +41,11 @@ const SeriesSlugRoute = SeriesSlugRouteImport.update({
   path: '/series/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ShareTokenRoute = ShareTokenRouteImport.update({
+  id: '/share/$token',
+  path: '/share/$token',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -47,6 +53,7 @@ export interface FileRoutesByFullPath {
   '/cast/$slug': typeof CastSlugRoute
   '/listen/$storyId': typeof ListenStoryIdRoute
   '/series/$slug': typeof SeriesSlugRoute
+  '/share/$token': typeof ShareTokenRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -54,6 +61,7 @@ export interface FileRoutesByTo {
   '/cast/$slug': typeof CastSlugRoute
   '/listen/$storyId': typeof ListenStoryIdRoute
   '/series/$slug': typeof SeriesSlugRoute
+  '/share/$token': typeof ShareTokenRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -62,13 +70,25 @@ export interface FileRoutesById {
   '/cast/$slug': typeof CastSlugRoute
   '/listen/$storyId': typeof ListenStoryIdRoute
   '/series/$slug': typeof SeriesSlugRoute
+  '/share/$token': typeof ShareTokenRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
   fullPaths:
-    '/' | '/admin' | '/cast/$slug' | '/listen/$storyId' | '/series/$slug'
+    | '/'
+    | '/admin'
+    | '/cast/$slug'
+    | '/listen/$storyId'
+    | '/series/$slug'
+    | '/share/$token'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/admin' | '/cast/$slug' | '/listen/$storyId' | '/series/$slug'
+  to:
+    | '/'
+    | '/admin'
+    | '/cast/$slug'
+    | '/listen/$storyId'
+    | '/series/$slug'
+    | '/share/$token'
   id:
     | '__root__'
     | '/'
@@ -76,6 +96,7 @@ export interface FileRouteTypes {
     | '/cast/$slug'
     | '/listen/$storyId'
     | '/series/$slug'
+    | '/share/$token'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -84,6 +105,7 @@ export interface RootRouteChildren {
   CastSlugRoute: typeof CastSlugRoute
   ListenStoryIdRoute: typeof ListenStoryIdRoute
   SeriesSlugRoute: typeof SeriesSlugRoute
+  ShareTokenRoute: typeof ShareTokenRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -123,6 +145,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SeriesSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/share/$token': {
+      id: '/share/$token'
+      path: '/share/$token'
+      fullPath: '/share/$token'
+      preLoaderRoute: typeof ShareTokenRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -132,6 +161,7 @@ const rootRouteChildren: RootRouteChildren = {
   CastSlugRoute: CastSlugRoute,
   ListenStoryIdRoute: ListenStoryIdRoute,
   SeriesSlugRoute: SeriesSlugRoute,
+  ShareTokenRoute: ShareTokenRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -1,8 +1,8 @@
 import { Link } from "@tanstack/react-router";
-import { Radio } from "lucide-react";
 import type { ReactNode } from "react";
 import { AgeGate } from "@/components/age-gate";
 import { cn } from "@/lib/utils";
+import { UserButton } from "@/lib/auth/gates";
 
 export function Shell({ children, wide }: { children: ReactNode; wide?: boolean }) {
   return (
@@ -16,10 +16,14 @@ export function Shell({ children, wide }: { children: ReactNode; wide?: boolean 
             )}
           >
             <Link to="/" className="flex items-center gap-2 text-fg no-underline">
-              <span className="grid size-9 place-items-center rounded-md bg-raised text-primary shadow-[var(--shadow-border)]">
-                <Radio className="size-4" strokeWidth={2} />
-              </span>
-              <span className="font-display text-lg tracking-tight">Storycast</span>
+              <img
+                src="/storycast-logo.png"
+                alt=""
+                width="40"
+                height="40"
+                className="size-10 rounded-lg object-cover shadow-[var(--shadow-border)]"
+              />
+              <span className="font-display text-lg tracking-tight">StoryCast</span>
             </Link>
             <nav className="flex items-center gap-1 text-sm">
               <Link
@@ -34,6 +38,7 @@ export function Shell({ children, wide }: { children: ReactNode; wide?: boolean 
               >
                 Admin
               </Link>
+              <UserButton />
             </nav>
           </div>
         </header>

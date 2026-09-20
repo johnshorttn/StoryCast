@@ -56,3 +56,12 @@ export async function requireUserId(bearerToken?: string): Promise<string> {
   if (!user) throw new UnauthorizedError();
   return user.id;
 }
+
+export async function requireUser(bearerToken?: string): Promise<{ id: string; email: string | null }> {
+  if (!authConfigured && !gateIdentityEnabled()) {
+    return { id: await requireUserId(bearerToken), email: "dev@example.com" };
+  }
+  const user = await getSessionUser(bearerToken);
+  if (!user) throw new UnauthorizedError();
+  return user;
+}

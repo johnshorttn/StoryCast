@@ -1,18 +1,17 @@
 import { useEffect, useState, type ReactNode } from "react";
-import { useStoryStore } from "@/lib/story-store";
-
-const DEFAULT_DOB = "1981-02-09";
+import { needsAgeGate, useStoryStore } from "@/lib/story-store";
 
 export function AgeGate({ children }: { children: ReactNode }) {
   const hydrate = useStoryStore((s) => s.hydrate);
   const ready = useStoryStore((s) => s.ready);
   const ageOk = useStoryStore((s) => s.ageOk);
   const verifyAge = useStoryStore((s) => s.verifyAge);
-  const [dob, setDob] = useState(DEFAULT_DOB);
+  const stories = useStoryStore((s) => s.custom);
+  const [dob, setDob] = useState("");
   const [msg, setMsg] = useState("");
 
   useEffect(() => {
-    hydrate();
+    void hydrate();
   }, [hydrate]);
 
   if (!ready) {
@@ -23,7 +22,7 @@ export function AgeGate({ children }: { children: ReactNode }) {
     );
   }
 
-  if (!ageOk) {
+  if (needsAgeGate(stories) && !ageOk) {
     return (
       <div className="grid min-h-dvh place-items-center bg-bg px-4 text-fg">
         <form
@@ -36,7 +35,7 @@ export function AgeGate({ children }: { children: ReactNode }) {
           <p className="text-sm uppercase tracking-[0.18em] text-primary">Age check</p>
           <h1 className="font-display text-2xl tracking-tight">18+ catalog</h1>
           <p className="mt-2 text-sm text-muted">
-            Confirm your date of birth to enter. The date is prefilled; change it if it is not yours.
+            Confirm your date of birth to enter the adult section.
           </p>
           <label className="mt-4 block text-sm text-muted">
             Date of birth

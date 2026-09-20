@@ -11,11 +11,43 @@ import {
   type Gender,
   type Story,
 } from "@/lib/story-types";
-import { CAST_VOICES, defaultVoiceId } from "@/lib/tts-catalog";
-import { synthTts } from "@/lib/tts";
+import {
+  CAST_VOICES,
+  defaultVoiceId,
+  voiceMatchScore,
+  type VoiceAccent,
+  type VoiceProvider,
+  type VoiceTone,
+} from "@/lib/tts-catalog";
+import { getTtsCapabilities, synthTts } from "@/lib/tts";
 import { clipsToWav, downloadBlob } from "@/lib/audio-export";
 import { useStoryStore } from "@/lib/story-store";
 import { cn } from "@/lib/utils";
+import { ensureVoices, speakLine, stopSpeech, voiceOptions, type VoiceOption } from "@/lib/speech";
+
+type PlayerVoice = {
+  id: string;
+  label: string;
+  gender: Gender;
+  provider: VoiceProvider | "device";
+  accent: VoiceAccent;
+  tone: VoiceTone;
+  available: boolean;
+};
+type VoicePreference = { accent: VoiceAccent; tone: VoiceTone };
+
+function defaultVoicePreferences(story: Story): Record<string, VoicePreference> {
+  const genders = defaultGenders(story);
+  return Object.fromEntries(
+    story.characters.map((character) => [
+      character.id,
+      {
+        accent: "american" as const,
+        tone: character.id === "narrator" ? "dramatic" as const : genders[character.id] === "male" ? "deep" as const : "warm" as const,
+      },
+    ]),
+  );
+}
 
 function playDataUrl(
   el: HTMLAudioElement,
@@ -125,6 +157,10 @@ function VoiceBlock({
   onGenderVoice,
   onPreview,
   previewing,
+  voices,
+  accent,
+  tone,
+  onPreference,
 }: {
   id: string;
   isNarrator: boolean;
@@ -137,10 +173,20 @@ function VoiceBlock({
   onGenderVoice: (gender: Gender, voice: string) => void;
   onPreview: () => void;
   previewing: boolean;
+  voices: PlayerVoice[];
+  accent: VoiceAccent;
+  tone: VoiceTone;
+  onPreference: (preference: VoicePreference) => void;
 }) {
   const sex: Gender = gender === "female" ? "female" : "male";
-  const voices = CAST_VOICES.filter((v) => v.gender === sex);
-  const selected = voices.some((v) => v.id === voice) ? voice : (voices[0]?.id ?? "");
+  const filteredVoices = voices
+    .filter((v) => v.gender === sex || v.gender === "neutral")
+    .sort((a, b) =>
+      voiceMatchScore(b, { gender: sex, accent, tone }) - voiceMatchScore(a, { gender: sex, accent, tone }) ||
+      a.label.localeCompare(b.label),
+    );
+  const selected = filteredVoices.some((v) => v.id === voice) ? voice : (filteredVoices[0]?.id ?? "");
+  const recommended = filteredVoices.find((candidate) => candidate.available);
 
   return (
     <div className="space-y-2">
@@ -179,6 +225,49 @@ function VoiceBlock({
           <option value="female">Female</option>
         </select>
       </label>
+      <div className="grid grid-cols-2 gap-2">
+        <label className="text-sm text-muted">
+          Accent
+          <select
+            className="mt-1 min-h-11 w-full rounded-md border border-border bg-bg px-2 text-fg"
+            value={accent}
+            onChange={(event) => onPreference({ accent: event.target.value as VoiceAccent, tone })}
+          >
+            <option value="american">American</option>
+            <option value="british">British</option>
+            <option value="neutral">Any</option>
+          </select>
+        </label>
+        <label className="text-sm text-muted">
+          Tone
+          <select
+            className="mt-1 min-h-11 w-full rounded-md border border-border bg-bg px-2 text-fg"
+            value={tone}
+            onChange={(event) => onPreference({ accent, tone: event.target.value as VoiceTone })}
+          >
+            <option value="warm">Warm</option>
+            <option value="clear">Clear</option>
+            <option value="soft">Soft</option>
+            <option value="deep">Deep</option>
+            <option value="bright">Bright</option>
+            <option value="dramatic">Dramatic</option>
+            <option value="neutral">Any</option>
+          </select>
+        </label>
+      </div>
+      {recommended ? (
+        <button
+          type="button"
+          className="w-full rounded-md border border-primary/40 bg-primary/10 px-3 py-2 text-left text-sm text-fg"
+          onClick={() => onGenderVoice(sex, recommended.id)}
+        >
+          <span className="block text-xs uppercase tracking-wide text-primary">Recommended</span>
+          <span className="font-semibold">{recommended.label}</span>
+          <span className="text-muted"> · {recommended.provider}</span>
+        </button>
+      ) : (
+        <p className="rounded-md bg-raised p-2 text-xs text-muted">No configured voice matches this character yet.</p>
+      )}
       <label className="block text-sm text-muted">
         Voice
         <select
@@ -187,9 +276,9 @@ function VoiceBlock({
           value={selected}
           onChange={(e) => onGenderVoice(sex, e.target.value)}
         >
-          {voices.map((v) => (
-            <option key={v.id} value={v.id}>
-              {v.label}
+          {filteredVoices.map((v) => (
+            <option key={v.id} value={v.id} disabled={!v.available}>
+              {v.accent === accent && v.tone === tone ? "★ " : ""}{v.label} · {v.provider}{v.available ? "" : " (not configured)"}
             </option>
           ))}
         </select>
@@ -238,6 +327,10 @@ export function Player({
     }
     return o;
   });
+  const [deviceVoiceRecords, setDeviceVoiceRecords] = useState<SpeechSynthesisVoice[]>([]);
+  const [deviceVoiceOptions, setDeviceVoiceOptions] = useState<VoiceOption[]>([]);
+  const [capabilities, setCapabilities] = useState<Record<VoiceProvider, boolean>>({ xai: false, kokoro: false, sherpa: false });
+  const [voicePreferences, setVoicePreferences] = useState(() => defaultVoicePreferences(story));
   const [active, setActive] = useState(saved?.beat ?? -1);
   const [playing, setPlaying] = useState(false);
   const [phase, setPhase] = useState<"idle" | "rendering" | "playing">("idle");
@@ -246,9 +339,17 @@ export function Player({
   const [done, setDone] = useState(false);
   const stopRef = useRef({ stopped: false, paused: false });
   const audioRef = useRef<HTMLAudioElement | null>(null);
-  const clipsRef = useRef<Map<string, { mime: string; b64: string }>>(new Map());
+  const clipsRef = useRef<Map<string, { mime: string; b64: string; url?: string }>>(new Map());
   const speedRef = useRef(speed);
   const autoRef = useRef(false);
+
+  useEffect(() => {
+    void ensureVoices().then((records) => {
+      setDeviceVoiceRecords(records);
+      setDeviceVoiceOptions(voiceOptions(records));
+    });
+    void getTtsCapabilities().then(setCapabilities);
+  }, []);
 
   useEffect(() => {
     speedRef.current = speed;
@@ -260,6 +361,7 @@ export function Player({
     setSpeak(defaultSpeak(story));
     const g = defaultGenders(story);
     setGenders(g);
+    setVoicePreferences(defaultVoicePreferences(story));
     const o: Record<string, string> = {};
     for (const c of story.characters) {
       o[c.id] = defaultVoiceId(g[c.id] || (c.id === "narrator" ? "male" : "female"), c.id);
@@ -295,6 +397,21 @@ export function Player({
 
   const beats = useMemo(() => beatsForMode(story, mode), [story, mode]);
   const spoken = useMemo(() => spokenNames(story, names, speak), [story, names, speak]);
+  const availableVoices = useMemo<PlayerVoice[]>(
+    () => [
+      ...CAST_VOICES.map((voice) => ({ ...voice, available: capabilities[voice.provider] })),
+      ...deviceVoiceOptions.map((voice) => ({
+        id: `device:${voice.uri}`,
+        label: `${voice.name}${voice.lang ? ` (${voice.lang})` : ""}`,
+        gender: voice.gender,
+        provider: "device" as const,
+        accent: /^en-GB/i.test(voice.lang) ? "british" as const : /^en-US/i.test(voice.lang) ? "american" as const : "neutral" as const,
+        tone: "neutral" as const,
+        available: true,
+      })),
+    ],
+    [capabilities, deviceVoiceOptions],
+  );
 
   const lines = useMemo(
     () =>
@@ -318,8 +435,14 @@ export function Player({
 
   function setGenderVoice(id: string, gender: Gender, voice: string) {
     const sex: Gender = gender === "female" ? "female" : "male";
-    const allowed = CAST_VOICES.filter((v) => v.gender === sex);
-    const nextVoice = allowed.some((v) => v.id === voice) ? voice : defaultVoiceId(sex, id);
+    const allowed = availableVoices.filter((v) => v.available && (v.gender === sex || v.gender === "neutral"));
+    const preference = voicePreferences[id] || { accent: "american", tone: "neutral" };
+    const fallback = [...allowed].sort(
+      (a, b) =>
+        voiceMatchScore(b, { gender: sex, ...preference }) -
+        voiceMatchScore(a, { gender: sex, ...preference }),
+    )[0]?.id;
+    const nextVoice = allowed.some((v) => v.id === voice) ? voice : (fallback || defaultVoiceId(sex, id));
     setGenders((prev) => ({ ...prev, [id]: sex }));
     setVoiceId((prev) => ({ ...prev, [id]: nextVoice }));
   }
@@ -328,24 +451,53 @@ export function Player({
     return `${vid}|${text}`;
   }
 
-  async function fetchClip(text: string, vid: string) {
+  async function fetchClip(text: string, vid: string, line?: { id: string; speaker: string }) {
+    if (vid.startsWith("device:")) throw new Error("Device voices cannot be exported as audio files");
     const key = clipKey(text, vid);
     const hit = clipsRef.current.get(key);
     if (hit) return hit;
-    const data = await synthTts({ data: { text, voiceId: vid } });
+    const data = await synthTts({
+      data: {
+        text,
+        voiceId: vid,
+        ...(line
+          ? {
+              render: {
+                storyId: story.id,
+                storyRevision: story.storyRev,
+                chapterId: `chapter-${story.config.chapter || 1}`,
+                beatId: line.id,
+                characterId: line.speaker,
+                settings: { mode },
+                pronunciationVersion: JSON.stringify(spoken),
+              },
+            }
+          : {}),
+      },
+    });
     if (!data.ok) throw new Error(data.error);
-    const clip = { mime: data.mime, b64: data.b64 };
+    const clip = { mime: data.mime, b64: data.b64, ...(data.url ? { url: data.url } : {}) };
     clipsRef.current.set(key, clip);
     return clip;
   }
 
-  async function speakOne(text: string, vid: string, startFrac = 0) {
+  async function speakOne(text: string, vid: string, startFrac = 0, line?: { id: string; speaker: string }) {
     setPhase("rendering");
     if (startFrac <= 0) setLineFrac(0);
-    const clip = await fetchClip(text, vid);
+    if (vid.startsWith("device:")) {
+      setPhase("playing");
+      await speakLine(text, {
+        uri: vid.slice("device:".length),
+        gender: "neutral",
+        voices: deviceVoiceRecords,
+      });
+      setLineFrac(1);
+      return "ended" as const;
+    }
+    const clip = await fetchClip(text, vid, line);
     if (stopRef.current.stopped) return "stopped" as const;
     if (stopRef.current.paused) return "paused" as const;
-    const url = `data:${clip.mime};base64,${clip.b64}`;
+    const url = clip.url || `data:${clip.mime};base64,${clip.b64}`;
     const el = audioRef.current;
     if (!el) throw new Error("No player");
     setPhase("playing");
@@ -378,7 +530,7 @@ export function Player({
         setActive(i);
         setProgress(story.id, i, i === from ? startFrac : 0);
         setStatus(`Rendering ${lines[i].speaker}\u2026`);
-        const result = await speakOne(lines[i].text, lines[i].voiceId, i === from ? startFrac : 0);
+        const result = await speakOne(lines[i].text, lines[i].voiceId, i === from ? startFrac : 0, lines[i]);
         if (result !== "ended") return;
         setProgress(story.id, i, 1);
       }
@@ -407,6 +559,7 @@ export function Player({
     stopRef.current.paused = true;
     const el = audioRef.current;
     if (el) el.pause();
+    stopSpeech();
     if (active >= 0) setProgress(story.id, active, lineFrac);
     setPlaying(false);
     setPhase("idle");
@@ -418,6 +571,7 @@ export function Player({
       audioRef.current.pause();
       audioRef.current.removeAttribute("src");
     }
+    stopSpeech();
     setPlaying(false);
     setPhase("idle");
     setActive(-1);
@@ -435,7 +589,7 @@ export function Player({
         if (stopRef.current.stopped) return;
         setActive(i);
         setStatus(`Rendering ${i + 1} of ${lines.length}\u2026`);
-        clips.push(await fetchClip(lines[i].text, lines[i].voiceId));
+        clips.push(await fetchClip(lines[i].text, lines[i].voiceId, lines[i]));
       }
       const wav = await clipsToWav(clips);
       downloadBlob(wav, `${story.id}.wav`);
@@ -465,6 +619,7 @@ export function Player({
         : `Line ${active + 1} of ${total}`;
   const people = story.characters;
   const canResume = !!saved && saved.beat < lines.length && !playing;
+  const usesDeviceVoice = lines.some((line) => line.voiceId.startsWith("device:"));
 
   return (
     <div>
@@ -528,7 +683,7 @@ export function Player({
         <aside className="h-fit rounded-lg bg-surface p-4 shadow-[var(--shadow-border)]">
           <p className="font-display text-base">Voices</p>
           <p className="mb-3 text-sm text-muted">
-            Gender filters the voice list. Playback speed and resume stay on this device.
+            Pick a voice profile and StoryCast ranks the closest matches across every configured provider.
           </p>
           <div className="mb-4">
             <p className="mb-2 text-sm text-muted">Speed</p>
@@ -562,6 +717,12 @@ export function Player({
                 onPronounce={(v) => setSpeak((prev) => ({ ...prev, [c.id]: v }))}
                 onGenderVoice={(g, v) => setGenderVoice(c.id, g, v)}
                 previewing={phase !== "idle" && !playing}
+                voices={availableVoices}
+                accent={voicePreferences[c.id]?.accent || "american"}
+                tone={voicePreferences[c.id]?.tone || "neutral"}
+                onPreference={(preference) =>
+                  setVoicePreferences((current) => ({ ...current, [c.id]: preference }))
+                }
                 onPreview={() => {
                   const sample =
                     c.id === "narrator"
@@ -614,10 +775,12 @@ export function Player({
           <button
             type="button"
             onClick={() => void downloadEpisode()}
-            className="mt-2 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-raised text-sm text-fg"
+            disabled={usesDeviceVoice}
+            title={usesDeviceVoice ? "Choose cloud voices to export a WAV episode" : undefined}
+            className="mt-2 inline-flex min-h-11 w-full items-center justify-center gap-2 rounded-md bg-raised text-sm text-fg disabled:cursor-not-allowed disabled:opacity-50"
           >
             <Download className="size-4" />
-            Download episode
+            {usesDeviceVoice ? "Cloud voices required to download" : "Download episode"}
           </button>
           {nextStory ? (
             <button

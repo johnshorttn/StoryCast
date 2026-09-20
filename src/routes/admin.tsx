@@ -8,8 +8,24 @@ import { importStories, validateStory } from "@/lib/story-validate";
 import { displayTitle, type Story } from "@/lib/story-types";
 import { useStoryStore } from "@/lib/story-store";
 import { cn } from "@/lib/utils";
+import { SignInGate } from "@/lib/auth/gates";
+import { getStoryRewriteCapability, rewriteStoryAsV2 } from "@/lib/story-rewrite";
+import { readStoryUpload } from "@/lib/story-upload";
+import { createStoryShare, getAccountTier, listStoryShares, revokeStoryShare } from "@/lib/story-api";
+import { redeemPlanGift } from "@/lib/plan-gifts";
+import { getCurrentPlatformRole } from "@/lib/platform-roles-api";
+import { listTemporaryAdminRequests, requestTemporaryAdmin, reviewTemporaryAdminRequest, revokeTemporaryAdmin } from "@/lib/privilege-elevation-api";
+import { TEMPORARILY_GRANTABLE_CAPABILITIES, type PlatformCapability, type PlatformRole } from "@/lib/platform-roles";
 
-export const Route = createFileRoute("/admin")({ component: Admin });
+export const Route = createFileRoute("/admin")({ component: AdminRoute });
+
+function AdminRoute() {
+  return (
+    <SignInGate>
+      <Admin />
+    </SignInGate>
+  );
+}
 
 function Admin() {
   const hydrate = useStoryStore((s) => s.hydrate);
@@ -18,7 +34,6 @@ function Admin() {
   const save = useStoryStore((s) => s.save);
   const saveMany = useStoryStore((s) => s.saveMany);
   const remove = useStoryStore((s) => s.remove);
-  const setPublished = useStoryStore((s) => s.setPublished);
   const fromTemplate = useStoryStore((s) => s.fromTemplate);
   const all = useMemo(() => useStoryStore.getState().all(), [custom, ready]);
 
@@ -35,10 +50,34 @@ function Admin() {
   const [prompt, setPrompt] = useState("");
   const [log, setLog] = useState("Ask for a draft in the Storycast JSON layout. Then use JSON in reply.");
   const [lastGrok, setLastGrok] = useState("");
+  const [rewriteInstruction, setRewriteInstruction] = useState("");
+  const [rewriting, setRewriting] = useState(false);
+  const [rewriteModel, setRewriteModel] = useState("");
+  const [rewritePresentation, setRewritePresentation] = useState<"book" | "anime">("book");
   const fileRef = useRef<HTMLInputElement>(null);
+  const [tier, setTier] = useState("free");
+  const [shares, setShares] = useState<Array<{ id: string; label: string | null; expires_at: string | null }>>([]);
+  const [giftCode, setGiftCode] = useState("");
+  const [platformRole, setPlatformRole] = useState<PlatformRole>("user");
+  const [elevationCapability, setElevationCapability] = useState<PlatformCapability>("view_finance");
+  const [elevationReason, setElevationReason] = useState("");
+  const [elevationRequests, setElevationRequests] = useState<Array<{
+    id: string; name: string; email: string; requested_capabilities: PlatformCapability[];
+    reason: string; status: string; approved_until: string | null;
+  }>>([]);
 
   useEffect(() => {
-    hydrate();
+    void hydrate(true);
+    void getStoryRewriteCapability().then((capability) =>
+      setRewriteModel(capability.configured ? capability.model : "not configured"),
+    );
+    void getAccountTier().then((account) => setTier(account.tier));
+    void getCurrentPlatformRole().then((access) => {
+      setPlatformRole(access.role);
+      if (access.role === "owner") {
+        void listTemporaryAdminRequests().then(setElevationRequests);
+      }
+    });
   }, [hydrate]);
 
   const cats = [...new Set(all.map((s) => s.category || s.config.category || "uncategorized"))];
@@ -50,16 +89,17 @@ function Admin() {
     setJson(JSON.stringify(s, null, 2));
     setStatus(s.id);
     setTab("fields");
+    void listStoryShares({ data: { storyId: s.id } }).then(setShares).catch(() => setShares([]));
   }
 
-  function applyImport(text: string) {
+  async function applyImport(text: string) {
     const result = importStories(text);
     if (result.error) {
       setStatus(result.error);
       setReport(null);
       return;
     }
-    if (result.imported.length) saveMany(result.imported);
+    if (result.imported.length) await saveMany(result.imported);
     setReport({
       imported: result.imported.map((s) => s.id),
       skipped: result.skipped,
@@ -77,19 +117,14 @@ function Admin() {
 
   async function onJsonFiles(files: FileList | null) {
     if (!files?.length) return;
-    const names = [...files].map((f) => f.name).join(", ");
-    const texts: string[] = [];
-    for (const file of files) {
-      if (!file.name.toLowerCase().endsWith(".json") && file.type && file.type !== "application/json") {
-        setStatus(`${file.name} is not a JSON file`);
-        return;
-      }
-      texts.push(await file.text());
+    const upload = await readStoryUpload(files);
+    if (!upload.ok) {
+      setStatus(upload.error);
+      return;
     }
-    const blob = texts.join("\n");
-    setBulk(blob);
-    setStatus(`Loaded ${names}`);
-    applyImport(blob);
+    setBulk(upload.content);
+    setStatus(`Loaded ${upload.names.join(", ")}`);
+    if (upload.allJson) await applyImport(upload.content);
     if (fileRef.current) fileRef.current.value = "";
   }
 
@@ -110,9 +145,78 @@ function Admin() {
         <p className="text-sm uppercase tracking-[0.18em] text-primary">Catalog</p>
         <h1 className="font-display text-3xl tracking-tight">Administer stories</h1>
         <p className="mt-1 max-w-2xl text-muted">
-          Edit with fields or JSON. Import a batch from the Stories Grok project. Covers, beats, and line preview live
-          here. Changes stay in this browser until you publish elsewhere.
+          Upload, rewrite, and manage private, unlisted, or public stories. Your current account tier is {tier}.
         </p>
+        <form
+          className="mt-3 flex max-w-lg flex-wrap gap-2"
+          onSubmit={(event) => {
+            event.preventDefault();
+            void redeemPlanGift({ data: { code: giftCode } })
+              .then((gift) => {
+                setTier(gift.tier);
+                setGiftCode("");
+                setStatus(`Gift redeemed: ${gift.durationDays} days of ${gift.tier}`);
+              })
+              .catch((error) => setStatus(error instanceof Error ? error.message : "Could not redeem gift"));
+          }}
+        >
+          <input
+            aria-label="Gift code"
+            className="min-h-11 min-w-0 flex-1 rounded-md border border-border bg-bg px-3 text-fg"
+            value={giftCode}
+            onChange={(event) => setGiftCode(event.target.value)}
+            placeholder="Paid-plan gift code"
+          />
+          <button type="submit" disabled={!giftCode.trim()} className="min-h-11 rounded-md bg-raised px-4 text-sm text-fg disabled:opacity-50">
+            Redeem gift
+          </button>
+        </form>
+        <p className="mt-2 text-xs uppercase tracking-wide text-muted">Platform role: {platformRole}</p>
+        {platformRole === "developer" || platformRole === "moderator" ? (
+          <form
+            className="mt-3 grid max-w-2xl gap-2 rounded-md bg-raised p-3 sm:grid-cols-[180px_1fr_auto]"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void requestTemporaryAdmin({ data: { capabilities: [elevationCapability], reason: elevationReason } })
+                .then(() => { setElevationReason(""); setStatus("Temporary administrator access requested"); })
+                .catch((error) => setStatus(error instanceof Error ? error.message : "Request failed"));
+            }}
+          >
+            <select className="min-h-11 rounded-md border border-border bg-bg px-2 text-fg" value={elevationCapability} onChange={(event) => setElevationCapability(event.target.value as PlatformCapability)}>
+              {TEMPORARILY_GRANTABLE_CAPABILITIES.map((capability) => <option key={capability} value={capability}>{capability.replaceAll("_", " ")}</option>)}
+            </select>
+            <input required minLength={10} maxLength={500} className="min-h-11 rounded-md border border-border bg-bg px-3 text-fg" value={elevationReason} onChange={(event) => setElevationReason(event.target.value)} placeholder="Why temporary admin access is needed" />
+            <button type="submit" className="min-h-11 rounded-md bg-primary px-4 font-semibold text-primary-fg">Request sudo</button>
+          </form>
+        ) : null}
+        {platformRole === "owner" && elevationRequests.some((request) => request.status === "pending" || request.status === "approved") ? (
+          <div className="mt-3 max-w-3xl rounded-md bg-raised p-3 text-sm">
+            <p className="mb-2 font-semibold">Temporary administrator requests</p>
+            {elevationRequests.filter((request) => request.status === "pending" || request.status === "approved").map((request) => (
+              <div key={request.id} className="border-t border-border py-2 first:border-0">
+                <p><span className="font-semibold">{request.name}</span> · {request.requested_capabilities.join(", ")}</p>
+                <p className="text-muted">{request.reason}</p>
+                <div className="mt-2 flex gap-2">
+                  {request.status === "pending" ? <>
+                    <button type="button" className="rounded-md bg-primary px-3 py-2 text-primary-fg" onClick={async () => {
+                      await reviewTemporaryAdminRequest({ data: { requestId: request.id, decision: "approve", minutes: 60 } });
+                      setElevationRequests(await listTemporaryAdminRequests());
+                    }}>Approve 1 hour</button>
+                    <button type="button" className="rounded-md bg-bg px-3 py-2" onClick={async () => {
+                      await reviewTemporaryAdminRequest({ data: { requestId: request.id, decision: "deny" } });
+                      setElevationRequests(await listTemporaryAdminRequests());
+                    }}>Deny</button>
+                  </> : (
+                    <button type="button" className="rounded-md bg-danger px-3 py-2" onClick={async () => {
+                      await revokeTemporaryAdmin({ data: { requestId: request.id } });
+                      setElevationRequests(await listTemporaryAdminRequests());
+                    }}>Revoke sudo</button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : null}
       </div>
 
       <div className="grid gap-4 lg:grid-cols-[240px_1fr_280px]">
@@ -121,7 +225,7 @@ function Admin() {
             <button
               type="button"
               className="min-h-11 rounded-md bg-primary px-3 font-semibold text-primary-fg"
-              onClick={() => {
+              onClick={async () => {
                 const t = fromTemplate();
                 setCurrentId("");
                 setDraft(t);
@@ -162,7 +266,7 @@ function Admin() {
               >
                 <span className="block font-semibold">{displayTitle(s)}</span>
                 <span className="text-xs text-muted">
-                  {s.category || s.config.category} \u00b7 {s.published === false ? "off" : "on"}
+                  {s.category || s.config.category} \u00b7 {s.visibility ?? (s.published === false ? "private" : "public")}
                 </span>
               </button>
             ))}
@@ -192,7 +296,7 @@ function Admin() {
             <button
               type="button"
               className="min-h-11 rounded-md bg-primary px-4 font-semibold text-primary-fg"
-              onClick={() => {
+              onClick={async () => {
                 try {
                   const story = parseEditor();
                   const errors = validateStory(story).filter((i) => i.level === "error");
@@ -200,7 +304,7 @@ function Admin() {
                     setStatus(errors[0].message);
                     return;
                   }
-                  save(story);
+                  await save(story);
                   setCurrentId(story.id);
                   setDraft(story);
                   setJson(JSON.stringify(story, null, 2));
@@ -215,30 +319,28 @@ function Admin() {
             <button
               type="button"
               className="min-h-11 rounded-md bg-raised px-4 text-fg"
-              onClick={() => {
+              onClick={async () => {
                 if (!currentId) return;
                 try {
-                  const story = parseEditor();
-                  const next = story.published === false;
-                  setPublished(currentId, next);
-                  const updated = { ...story, published: next };
-                  setDraft(updated);
-                  setJson(JSON.stringify(updated, null, 2));
-                  setStatus(next ? "Enabled" : "Disabled");
+                  const share = await createStoryShare({ data: { storyId: currentId, expiresInDays: 30 } });
+                  const url = `${window.location.origin}/share/${share.token}`;
+                  await navigator.clipboard.writeText(url);
+                  setStatus("Private share link copied — expires in 30 days");
+                  setShares(await listStoryShares({ data: { storyId: currentId } }));
                 } catch (e) {
-                  setStatus(e instanceof Error ? e.message : "Could not toggle");
+                  setStatus(e instanceof Error ? e.message : "Could not create share link");
                 }
               }}
             >
-              Enable / disable
+              Copy private share link
             </button>
             <button
               type="button"
               className="min-h-11 rounded-md bg-danger px-4 text-fg"
-              onClick={() => {
+              onClick={async () => {
                 if (!currentId) return;
-                if (!confirm("Remove " + currentId + " from this browser catalog?")) return;
-                remove(currentId);
+                if (!confirm("Delete " + currentId + " from the catalog? Revision history will be retained.")) return;
+                await remove(currentId);
                 setCurrentId("");
                 setDraft(null);
                 setJson("");
@@ -248,6 +350,29 @@ function Admin() {
               Delete
             </button>
           </div>
+          {shares.length ? (
+            <div className="mb-3 rounded-md bg-raised p-3 text-sm">
+              <p className="mb-2 font-semibold">Active private links</p>
+              {shares.map((share) => (
+                <div key={share.id} className="flex min-h-11 items-center justify-between gap-3 border-t border-border first:border-0">
+                  <span className="text-muted">
+                    {share.label || "Private link"}{share.expires_at ? ` · expires ${new Date(share.expires_at).toLocaleDateString()}` : ""}
+                  </span>
+                  <button
+                    type="button"
+                    className="text-danger hover:underline"
+                    onClick={async () => {
+                      await revokeStoryShare({ data: { shareId: share.id } });
+                      setShares((current) => current.filter((item) => item.id !== share.id));
+                      setStatus("Share link revoked");
+                    }}
+                  >
+                    Revoke
+                  </button>
+                </div>
+              ))}
+            </div>
+          ) : null}
           {status ? <p className="mb-2 text-sm text-muted">{status}</p> : null}
 
           {tab === "fields" ? (
@@ -280,14 +405,14 @@ function Admin() {
           {tab === "import" ? (
             <div>
               <p className="mb-2 text-sm text-muted">
-                Upload one or more `.json` files, or paste Grok’s fenced JSON. Missing narrator, characterCount, and
-                title/series fields are filled in. Duplicate ids in the batch are skipped.
+                  Upload JSON, text, or Markdown. Valid StoryCast JSON can be imported directly; prose and legacy
+                  formats can be rewritten into a reviewable v2 cast draft by the local model.
               </p>
               <div className="mb-3 flex flex-wrap gap-2">
                 <input
                   ref={fileRef}
                   type="file"
-                  accept="application/json,.json"
+                  accept="application/json,text/plain,text/markdown,.json,.txt,.md,.markdown"
                   multiple
                   className="hidden"
                   onChange={(e) => void onJsonFiles(e.target.files)}
@@ -298,7 +423,7 @@ function Admin() {
                   onClick={() => fileRef.current?.click()}
                 >
                   <Upload className="size-4" />
-                  Upload JSON file
+                  Upload story file
                 </button>
               </div>
               <textarea
@@ -311,10 +436,59 @@ function Admin() {
               <button
                 type="button"
                 className="mt-2 min-h-11 rounded-md bg-primary px-4 font-semibold text-primary-fg"
-                onClick={() => applyImport(bulk)}
+                onClick={() => void applyImport(bulk)}
               >
                 Validate and import
               </button>
+              <div className="mt-4 rounded-md bg-raised p-3">
+                <p className="font-display text-sm text-fg">Rewrite into StoryCast v2</p>
+                <p className="mt-1 text-xs text-muted">Local model: {rewriteModel || "checking…"}</p>
+                <label className="mt-2 block text-sm text-muted">
+                  Optional editor direction
+                  <input
+                    className="mt-1 min-h-11 w-full rounded-md border border-border bg-bg px-3 text-fg"
+                    value={rewriteInstruction}
+                    onChange={(event) => setRewriteInstruction(event.target.value)}
+                    placeholder="Preserve every scene; make dialogue more natural."
+                  />
+                </label>
+                <label className="mt-2 block text-sm text-muted">
+                  Rewrite presentation
+                  <select className="mt-1 min-h-11 w-full rounded-md border border-border bg-bg px-3 text-fg" value={rewritePresentation} onChange={(event) => setRewritePresentation(event.target.value === "anime" ? "anime" : "book")}>
+                    <option value="book">Regular book</option>
+                    <option value="anime">Anime-inspired episode</option>
+                  </select>
+                </label>
+                <button
+                  type="button"
+                  disabled={rewriting || !bulk.trim() || rewriteModel === "not configured"}
+                  className="mt-2 min-h-11 w-full rounded-md bg-primary px-4 font-semibold text-primary-fg disabled:cursor-not-allowed disabled:opacity-50"
+                  onClick={async () => {
+                    setRewriting(true);
+                    setStatus("Analyzing and rewriting story…");
+                    try {
+                      const result = await rewriteStoryAsV2({
+                        data: { content: bulk, instruction: rewriteInstruction, presentation: rewritePresentation },
+                      });
+                      if (!result.ok) {
+                        setStatus(result.error);
+                        return;
+                      }
+                      setCurrentId("");
+                      setDraft(result.story);
+                      setJson(JSON.stringify(result.story, null, 2));
+                      setStatus(`Rewritten as v2 with ${result.model} — review before saving`);
+                      setTab("fields");
+                    } catch (error) {
+                      setStatus(error instanceof Error ? error.message : "Rewrite failed");
+                    } finally {
+                      setRewriting(false);
+                    }
+                  }}
+                >
+                  {rewriting ? "Rewriting…" : "Analyze and rewrite as v2"}
+                </button>
+              </div>
               {report ? (
                 <div className="mt-3 space-y-2 text-sm">
                   {report.imported.length ? (
