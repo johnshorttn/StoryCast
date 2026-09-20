@@ -15,6 +15,7 @@ import { Route as CastSlugRouteImport } from './routes/cast.$slug'
 import { Route as ListenStoryIdRouteImport } from './routes/listen.$storyId'
 import { Route as SeriesSlugRouteImport } from './routes/series.$slug'
 import { Route as ShareTokenRouteImport } from './routes/share.$token'
+import { Route as ApiAuthSplatRouteImport } from './routes/api/auth/$'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -46,6 +47,11 @@ const ShareTokenRoute = ShareTokenRouteImport.update({
   path: '/share/$token',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiAuthSplatRoute = ApiAuthSplatRouteImport.update({
+  id: '/api/auth/$',
+  path: '/api/auth/$',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -54,6 +60,7 @@ export interface FileRoutesByFullPath {
   '/listen/$storyId': typeof ListenStoryIdRoute
   '/series/$slug': typeof SeriesSlugRoute
   '/share/$token': typeof ShareTokenRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -62,6 +69,7 @@ export interface FileRoutesByTo {
   '/listen/$storyId': typeof ListenStoryIdRoute
   '/series/$slug': typeof SeriesSlugRoute
   '/share/$token': typeof ShareTokenRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -71,6 +79,7 @@ export interface FileRoutesById {
   '/listen/$storyId': typeof ListenStoryIdRoute
   '/series/$slug': typeof SeriesSlugRoute
   '/share/$token': typeof ShareTokenRoute
+  '/api/auth/$': typeof ApiAuthSplatRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -81,6 +90,7 @@ export interface FileRouteTypes {
     | '/listen/$storyId'
     | '/series/$slug'
     | '/share/$token'
+    | '/api/auth/$'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -89,6 +99,7 @@ export interface FileRouteTypes {
     | '/listen/$storyId'
     | '/series/$slug'
     | '/share/$token'
+    | '/api/auth/$'
   id:
     | '__root__'
     | '/'
@@ -97,6 +108,7 @@ export interface FileRouteTypes {
     | '/listen/$storyId'
     | '/series/$slug'
     | '/share/$token'
+    | '/api/auth/$'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -106,6 +118,7 @@ export interface RootRouteChildren {
   ListenStoryIdRoute: typeof ListenStoryIdRoute
   SeriesSlugRoute: typeof SeriesSlugRoute
   ShareTokenRoute: typeof ShareTokenRoute
+  ApiAuthSplatRoute: typeof ApiAuthSplatRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -152,6 +165,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ShareTokenRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/auth/$': {
+      id: '/api/auth/$'
+      path: '/api/auth/$'
+      fullPath: '/api/auth/$'
+      preLoaderRoute: typeof ApiAuthSplatRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -162,6 +182,7 @@ const rootRouteChildren: RootRouteChildren = {
   ListenStoryIdRoute: ListenStoryIdRoute,
   SeriesSlugRoute: SeriesSlugRoute,
   ShareTokenRoute: ShareTokenRoute,
+  ApiAuthSplatRoute: ApiAuthSplatRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
