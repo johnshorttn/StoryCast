@@ -1,5 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { createServerFn } from "@tanstack/react-start";
+import { assertAdminApiAccess } from "./platform-admin";
 import { TEMPORARILY_GRANTABLE_CAPABILITIES, type PlatformCapability } from "./platform-roles";
 import { ensurePlatformRole, requirePermanentOwner } from "./platform-roles.server";
 
@@ -29,7 +30,8 @@ export const requestTemporaryAdmin = createServerFn({ method: "POST" })
   });
 
 export const listTemporaryAdminRequests = createServerFn({ method: "GET" }).handler(async () => {
-  await requirePermanentOwner();
+  const access = await requirePermanentOwner();
+  assertAdminApiAccess(access.role, "listTemporaryAdminRequests");
   const { getSql } = await import("./db");
   const sql = await getSql();
   return sql.query<{
@@ -48,6 +50,7 @@ export const reviewTemporaryAdminRequest = createServerFn({ method: "POST" })
   .validator((input: { requestId: string; decision: "approve" | "deny"; minutes?: number }) => input)
   .handler(async ({ data }) => {
     const owner = await requirePermanentOwner();
+    assertAdminApiAccess(owner.role, "reviewTemporaryAdminRequest");
     const minutes = Math.max(15, Math.min(240, Math.floor(data.minutes || 60)));
     const { getSql } = await import("./db");
     const sql = await getSql();
@@ -69,6 +72,7 @@ export const revokeTemporaryAdmin = createServerFn({ method: "POST" })
   .validator((input: { requestId: string }) => input)
   .handler(async ({ data }) => {
     const owner = await requirePermanentOwner();
+    assertAdminApiAccess(owner.role, "revokeTemporaryAdmin");
     const { getSql } = await import("./db");
     const sql = await getSql();
     await sql.query(

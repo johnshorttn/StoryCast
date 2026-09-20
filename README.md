@@ -11,6 +11,7 @@ Bookstore-style catalog for multi-character audio stories. Listen in narrator or
 - Name substitution and pronounce-as fields, with a name preview
 - Resume, queue, playback speed, and episode download
 - Admin: structured editor, JSON paste, JSON file upload, bulk import validation, Grok draft helper
+- Site administration portal for owners: users and roles, content moderation, billing/finance, system health, and settings
 - Database-backed catalog with protected Admin writes and revision history
 - Eight xAI cloud voices plus compatible voices installed on the listener's device
 - Site-wide age gate (default birth date can be changed in the gate)
@@ -79,10 +80,13 @@ fees, tax, net, and transaction count. Combined values are derived from the two 
 reconciliation result. Financial reporting is an Owner capability.
 
 Platform authorization has four roles: Owner, Developer, Moderator, and User. Owners are permanent root administrators
-and are bootstrapped through `STORYCAST_OWNER_EMAILS`. Developers and Moderators can request capability-scoped temporary
-administrator access with a reason. An Owner must approve it for 15 minutes to 4 hours and may revoke it immediately.
-Temporary access can cover moderation, system health, integrations, finance, or billing, but can never assign permanent
-roles or create another Owner. Requests, approvals, expiration, and revocation are retained for audit.
+and are bootstrapped through `STORYCAST_OWNER_EMAILS`. An owner is not bound by Free/Creator/Studio story, share-link,
+or TTS quotas. Developers and Moderators can request capability-scoped temporary administrator access with a reason.
+An Owner must approve it for 15 minutes to 4 hours and may revoke it immediately. Temporary access can cover
+moderation, system health, integrations, finance, or billing, but can never assign permanent roles, create another
+Owner, or grant unlimited account limits. Requests, approvals, expiration, and revocation are retained for audit.
+The `/admin` portal is a site administration console for owners and elevated staff; regular users still manage only
+their own stories there.
 
 ## Local story rewrite model
 

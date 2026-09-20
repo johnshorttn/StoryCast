@@ -1,17 +1,18 @@
 import { capabilitiesForRole, normalizePlatformRole, roleCan, type PlatformCapability, type PlatformRole } from "./platform-roles";
+import { parseOwnerEmails, resolveDefaultPlatformRole } from "./platform-admin";
 import type { VerifiedUser } from "./auth/verify.server";
 
-function configuredOwnerEmails() {
-  return (process.env.STORYCAST_OWNER_EMAILS || "")
-    .split(",").map((email) => email.trim().toLowerCase()).filter(Boolean);
+export function configuredOwnerEmails() {
+  return parseOwnerEmails(process.env.STORYCAST_OWNER_EMAILS);
 }
 
 export async function ensurePlatformRole(user: VerifiedUser): Promise<PlatformRole> {
   const { getSql, dbSource } = await import("./db");
   const sql = await getSql();
-  const configuredOwner = Boolean(user.email && configuredOwnerEmails().includes(user.email.toLowerCase()));
-  const devOwner = dbSource === "pglite" && user.id === "dev-user";
-  const defaultRole: PlatformRole = configuredOwner || devOwner ? "owner" : "user";
+  const defaultRole = resolveDefaultPlatformRole(user, {
+    dbSource,
+    ownerEmails: configuredOwnerEmails(),
+  });
   await sql.query(
     `insert into user_roles (user_id, role) values ($1, $2)
      on conflict (user_id) do update set role = 'owner', updated_at = now()
@@ -37,21 +38,25 @@ export async function activeElevatedCapabilities(userId: string): Promise<Platfo
   }))];
 }
 
-export async function requirePlatformCapability(capability: PlatformCapability) {
+export async function currentPlatformAccess() {
   const { requireUser } = await import("./auth/verify.server");
   const user = await requireUser();
   const role = await ensurePlatformRole(user);
-  const baseCapabilities = capabilitiesForRole(role);
-  if (roleCan(role, capability)) return { user, role, capabilities: baseCapabilities, elevated: false };
   const elevatedCapabilities = await activeElevatedCapabilities(user.id);
-  if (!elevatedCapabilities.includes(capability)) throw new Error(`${capability} permission required`);
-  return { user, role, capabilities: [...new Set([...baseCapabilities, ...elevatedCapabilities])], elevated: true };
+  const capabilities = [...new Set([...capabilitiesForRole(role), ...elevatedCapabilities])];
+  return { user, role, capabilities, elevatedCapabilities, elevated: elevatedCapabilities.length > 0 };
+}
+
+export async function requirePlatformCapability(capability: PlatformCapability) {
+  const access = await currentPlatformAccess();
+  if (roleCan(access.role, capability) || access.elevatedCapabilities.includes(capability)) {
+    return access;
+  }
+  throw new Error(`${capability} permission required`);
 }
 
 export async function requirePermanentOwner() {
-  const { requireUser } = await import("./auth/verify.server");
-  const user = await requireUser();
-  const role = await ensurePlatformRole(user);
-  if (role !== "owner") throw new Error("Permanent owner access required");
-  return { user, role };
+  const access = await currentPlatformAccess();
+  if (access.role !== "owner") throw new Error("Permanent owner access required");
+  return access;
 }
